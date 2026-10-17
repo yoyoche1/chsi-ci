@@ -43,7 +43,7 @@ jobs:
           sudo curl -fsSL -o /usr/local/bin/ldid \
             "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64"
           sudo chmod +x /usr/local/bin/ldid
-          ldid -v
+          which ldid
 
       - name: 编译 dylib（QQ + WX 双包）
         working-directory: loon-chsi/inject
