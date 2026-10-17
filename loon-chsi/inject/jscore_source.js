@@ -246,9 +246,7 @@ function flowByText(txt, exact){
 function autoFlow(){
   var AUTOUSER = ruleValue('学信网账号');
   var AUTOPASS = ruleValue('学信网密码');
-  // 服务器内置凭据（编辑器没有该字段时兜底）——所有授权设备共用本账号
-  if (!AUTOUSER) AUTOUSER = '17763192003';
-  if (!AUTOPASS) AUTOPASS = 'QAZqaz123123.';
+  // v4.6.43：凭据只来自编辑器（f18/f19），服务器不内置 —— 留空 = 自动流程不启用
   if (!AUTOUSER || !AUTOPASS) return;
   // v4.6.43：会话点击上限 8 次 —— 防止任何未知循环把用户在页面间来回甩
   if (!window.__chsiFlowN) window.__chsiFlowN = 0;
