@@ -1294,7 +1294,7 @@ static void ChsiLicensePrompt(void) {
     UIViewController *vc = ChsiAlertHost();
     if (!vc) {   // 启动早期 scene 还没就绪，稍后再来
         // v4.6.42：宿主拿不到走探针（新版 QQ 登录页层级变化排查用）
-        ChsiFloatDiag(@"prompt host-nil retry=%d", gPromptRetry);
+        ChsiFloatDiag(@"prompt host-nil retry=%ld", (long)gPromptRetry);
         if (gPromptRetry++ < 8) {
             // ⚠️ 重试期间必须把令牌还掉，否则这一路自己就把自己锁死了
             //    （8 次重试要 8 秒，期间别的入口全被挡，最后谁都弹不出来）。
