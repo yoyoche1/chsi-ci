@@ -1,0 +1,123 @@
+name: build-chsihook
+
+on:
+  push:
+    paths:
+      - 'loon-chsi/inject/**'
+      - '.github/workflows/build-chsihook.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 theos + Linux 交叉工具链
+        run: |
+          set -e
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          echo "THEOS_MAKE_PATH=$HOME/theos/makefiles" >> "$GITHUB_ENV"
+          # Procursus Linux 工具链（clang for iOS）
+          mkdir -p /tmp/tc
+          curl -fsSL -o /tmp/tc.tar.xz \
+            "https://github.com/ProcursusTeam/ProcursusToolchain/releases/latest/download/toolchain_linux_x86_64.tar.xz"
+          tar -xJf /tmp/tc.tar.xz -C /tmp/tc
+          TCBIN=$(dirname "$(find /tmp/tc -type f -name clang | head -1)")
+          TCROOT=$(cd "$TCBIN/.." && pwd)
+          mkdir -p "$HOME/theos/toolchain/linux/iphone"
+          cp -R "$TCROOT/." "$HOME/theos/toolchain/linux/iphone/"
+          "$HOME/theos/toolchain/linux/iphone/bin/clang" --version | head -1
+
+      - name: 下载 iOS SDK
+        run: |
+          set -e
+          mkdir -p "$HOME/theos/sdks"
+          curl -fsSL -o /tmp/sdks.tar.gz \
+            "https://github.com/theos/sdks/archive/refs/heads/master.tar.gz"
+          tar -xzf /tmp/sdks.tar.gz -C /tmp
+          cp -R /tmp/sdks-master/*.sdk "$HOME/theos/sdks/" || true
+          ls "$HOME/theos/sdks"
+
+      - name: 装 ldid（theos 签名需要）
+        run: |
+          set -e
+          sudo curl -fsSL -o /usr/local/bin/ldid \
+            "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64"
+          sudo chmod +x /usr/local/bin/ldid
+          ldid -v
+
+      - name: 编译 dylib（QQ + WX 双包）
+        working-directory: loon-chsi/inject
+        run: |
+          set -o pipefail
+          make 2>&1 | tee build.log || true
+          echo "======== 查找产物 ========"
+          find .theos -name '*.dylib*' | sort
+
+      - name: 整理产物
+        if: always()
+        working-directory: loon-chsi/inject
+        run: |
+          mkdir -p out
+          # v4.1：双包整理（ChsiHookQQ / ChsiHookWX）
+          for name in ChsiHookQQ ChsiHookWX; do
+            for f in $(find .theos -path '*/obj/*' -name "$name.dylib" -type f 2>/dev/null); do
+              case "$f" in *".dSYM"*) continue ;; esac
+              cp "$f" "out/$name.dylib" && echo "取自: $f" && break
+            done
+          done
+          # v4.1：双包各自的 Bundle 过滤 plist
+          cp ChsiHookQQ.plist ChsiHookWX.plist out/ 2>/dev/null || true
+          # v3: 设置面板 bundle（用户拷进 QQ.app / WeChat.app 根目录）
+          cp -R Settings.bundle out/ 2>/dev/null || true
+          ls -la out/
+          # v4.1 防呆：run success ≠ 编译成功（make || true 吞退出码）——
+          # 缺任何一个 dylib 直接 fail，让 run 标红。
+          for name in ChsiHookQQ ChsiHookWX; do
+            if [ ! -f "out/$name.dylib" ]; then
+              echo "!! 缺少 out/$name.dylib（编译失败？拉 build-log artifact 查 error）"
+              exit 1
+            fi
+          done
+
+      - name: 校验 dylib 是否为可加载的 Mach-O（双包）
+        if: always()
+        working-directory: loon-chsi/inject
+        run: |
+          for name in ChsiHookQQ ChsiHookWX; do
+            if [ -f "out/$name.dylib" ]; then
+              echo "======== $name ========"
+              echo "大小: $(stat -c%s out/$name.dylib)"
+              file "out/$name.dylib"
+              lipo -info "out/$name.dylib" || true
+              python3 _verify_macho.py "out/$name.dylib" || exit 1
+            else
+              echo "!! 未找到 out/$name.dylib"
+            fi
+          done
+          echo "======== plist lint ========"
+          python3 - <<'PYEOF'
+          import plistlib
+          for f in ["out/ChsiHookQQ.plist", "out/ChsiHookWX.plist"]:
+              with open(f, "rb") as fh:
+                  plistlib.load(fh)
+              print(f, "OK")
+          PYEOF
+
+      - name: 上传 dylib（双包）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChsiHook-dylib
+          path: loon-chsi/inject/out/**
+          if-no-files-found: error
+
+      - name: 上传构建日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: loon-chsi/inject/build.log
+          if-no-files-found: warn
