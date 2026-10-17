@@ -19,15 +19,12 @@ jobs:
           git clone --recursive --depth 1 https://github.com/theos/theos.git "$HOME/theos"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
           echo "THEOS_MAKE_PATH=$HOME/theos/makefiles" >> "$GITHUB_ENV"
-          # Procursus Linux 工具链（clang for iOS）
-          mkdir -p /tmp/tc
+          # 官方 install-theos 同款工具链（L1ghtmann/llvm-project，非 swift 精简版）
+          sudo apt-get install -y libtinfo6 || true
           curl -fsSL -o /tmp/tc.tar.xz \
-            "https://github.com/ProcursusTeam/ProcursusToolchain/releases/latest/download/toolchain_linux_x86_64.tar.xz"
-          tar -xJf /tmp/tc.tar.xz -C /tmp/tc
-          TCBIN=$(dirname "$(find /tmp/tc -type f -name clang | head -1)")
-          TCROOT=$(cd "$TCBIN/.." && pwd)
-          mkdir -p "$HOME/theos/toolchain/linux/iphone"
-          cp -R "$TCROOT/." "$HOME/theos/toolchain/linux/iphone/"
+            "https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz"
+          mkdir -p "$HOME/theos/toolchain"
+          tar -xJf /tmp/tc.tar.xz -C "$HOME/theos/toolchain/"
           "$HOME/theos/toolchain/linux/iphone/bin/clang" --version | head -1
 
       - name: 下载 iOS SDK
@@ -43,9 +40,7 @@ jobs:
       - name: 装 ldid（theos 签名需要）
         run: |
           set -e
-          sudo curl -fsSL -o /usr/local/bin/ldid \
-            "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64"
-          sudo chmod +x /usr/local/bin/ldid
+          sudo apt-get install -y ldid || true
           ldid -v
 
       - name: 编译 dylib（QQ + WX 双包）
