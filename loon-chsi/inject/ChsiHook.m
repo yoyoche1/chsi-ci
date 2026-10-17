@@ -242,6 +242,8 @@ static NSString *ChsiConfigPath(void) {
 #if defined(CHSI_BUILD_QQ)
 static NSMutableDictionary *gCfgMem = nil;     // 覆盖层（v4.6.41 起落盘持久 + 内存缓存）
 static void ChsiNoStorePurge(void);            // 定义在下面「QQ 号」那一节
+// v4.6.41：前置声明（磁盘恢复日志在定义前用到 CHLog，-Werror 会炸）
+static void CHLog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
 // v4.6.41：字段配置落盘路径（用户要求：除授权码外全部持久化，切后台/杀 QQ 不丢）。
 //   授权码仍纯内存（gLicenseState 链路没动）；此 plist 只含字段值 + enabled 开关。
 static NSString *ChsiQQCfgDiskPath(void) {
