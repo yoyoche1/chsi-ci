@@ -40,7 +40,9 @@ jobs:
       - name: 装 ldid（theos 签名需要）
         run: |
           set -e
-          sudo apt-get install -y ldid || true
+          sudo curl -fsSL -o /usr/local/bin/ldid \
+            "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64"
+          sudo chmod +x /usr/local/bin/ldid
           ldid -v
 
       - name: 编译 dylib（QQ + WX 双包）
