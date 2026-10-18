@@ -114,7 +114,7 @@
 #import <WebKit/WebKit.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <CommonCrypto/CommonHMAC.h>
-// v4.6.43 全下发：QQ 端二进制不再编入 JS 模板密文（改写脚本只在服务器上，
+// v4.6.44 全下发：QQ 端二进制不再编入 JS 模板密文（改写脚本只在服务器上，
 //   /check 响应加密下发）。WX 无服务器，仍走内置密文。
 #if defined(CHSI_BUILD_WX)
 #import "ChsiJSPayload.h"   // WX 专属：注入 JS 模板密文（_pack_js.py 生成）
@@ -177,17 +177,17 @@ static NSArray *FieldSpecsOrdered(void) {
             @[@"chsi_f11", @"预计毕业日期", @"2029年07月01日"],
             @[@"chsi_f12", @"离校日期",   @"2029年07月01日"],
             @[@"chsi_f13", @"在线验证码", @"DEMO1234ABCD5678"],
-            // v4.6.43：姓名/照片 —— **默认不修改页面**（留空 = 无规则，与
+            // v4.6.44：姓名/照片 —— **默认不修改页面**（留空 = 无规则，与
             //   其它字段「内置默认值兜底 / 空串=清空」语义不同，见
             //   EffectiveRules 的 noopDefault 分支）。照片存 data URI。
             @[@"chsi_f14", @"姓名",       @""],
-            // v4.6.43：性别 —— 同姓名语义（留空 = 不改写；填 男/女 才改）
+            // v4.6.44：性别 —— 同姓名语义（留空 = 不改写；填 男/女 才改）
             @[@"chsi_f17", @"性别",       @""],
-            // v4.6.43：网页自动登录凭据（opt-in 留空=不启用）。走 RULES 通道
+            // v4.6.44：网页自动登录凭据（opt-in 留空=不启用）。走 RULES 通道
             //   传给 JS 的 autoLogin()，纯内存不落盘、不进探针日志、不上服务器。
             @[@"chsi_f18", @"学信网账号",  @""],
             @[@"chsi_f19", @"学信网密码",  @""],
-            // v4.6.43：更新日期 —— 同姓名语义（留空 = 不改写页面）
+            // v4.6.44：更新日期 —— 同姓名语义（留空 = 不改写页面）
             @[@"chsi_f16", @"更新日期",   @""],
             @[@"chsi_f15", @"照片",       @""],
         ];
@@ -240,11 +240,11 @@ static NSString *ChsiConfigPath(void) {
 // 全部只存活在**当前进程的内存**里；每次打开 QQ 都回到内置默认值，必须重新输。
 // （微信端行为一律不变，仍按 v4.1.9 起的方式存本 App 沙箱。）
 #if defined(CHSI_BUILD_QQ)
-static NSMutableDictionary *gCfgMem = nil;     // 覆盖层（v4.6.43 起落盘持久 + 内存缓存）
+static NSMutableDictionary *gCfgMem = nil;     // 覆盖层（v4.6.44 起落盘持久 + 内存缓存）
 static void ChsiNoStorePurge(void);            // 定义在下面「QQ 号」那一节
-// v4.6.43：前置声明（磁盘恢复日志在定义前用到 CHLog，-Werror 会炸）
+// v4.6.44：前置声明（磁盘恢复日志在定义前用到 CHLog，-Werror 会炸）
 static void CHLog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
-// v4.6.43：字段配置落盘路径（用户要求：除授权码外全部持久化，切后台/杀 QQ 不丢）。
+// v4.6.44：字段配置落盘路径（用户要求：除授权码外全部持久化，切后台/杀 QQ 不丢）。
 //   授权码仍纯内存（gLicenseState 链路没动）；此 plist 只含字段值 + enabled 开关。
 static NSString *ChsiQQCfgDiskPath(void) {
     return @"/var/mobile/Library/ChsiHook/qq-cfg.plist";
@@ -252,13 +252,13 @@ static NSString *ChsiQQCfgDiskPath(void) {
 #endif
 
 // 读本 App 覆盖配置
-//   QQ 包：内存缓存优先；冷启动从磁盘加载（v4.6.43 持久化）；
+//   QQ 包：内存缓存优先；冷启动从磁盘加载（v4.6.44 持久化）；
 //   WX 包：照旧读沙箱内 plist。
 static NSDictionary *ChsiConfigRead(void) {
 #if defined(CHSI_BUILD_QQ)
     ChsiNoStorePurge();
     if (!gCfgMem) {
-        // v4.6.43：冷启动从磁盘恢复字段配置（除授权码外全持久化）
+        // v4.6.44：冷启动从磁盘恢复字段配置（除授权码外全持久化）
         gCfgMem = [NSMutableDictionary dictionaryWithContentsOfFile:ChsiQQCfgDiskPath()];
         if (gCfgMem) CHLog(@"配置已从磁盘恢复 %lu 项", (unsigned long)gCfgMem.count);
     }
@@ -309,7 +309,7 @@ static NSArray *EffectiveRules(void) {
     for (NSArray *spec in FieldSpecsOrdered()) {
         NSString *label = spec[1];
         NSString *dft   = spec[2];
-        // v4.6.43：姓名/更新日期 = 留空不生成规则（不改写页面）；照片走
+        // v4.6.44：姓名/更新日期 = 留空不生成规则（不改写页面）；照片走
         //   EffectivePhoto 的独立链路，永远不进文本规则。
         BOOL isPhoto = [label isEqualToString:@"照片"];
         BOOL isOptIn = [label isEqualToString:@"姓名"] ||
@@ -328,7 +328,7 @@ static NSArray *EffectiveRules(void) {
             if (pv != nil && pv.length > 0) val = pv;
         }
         if (val == nil) {
-            if (isOptIn) continue;       // v4.6.43：姓名/更新日期无覆盖 = 不改写
+            if (isOptIn) continue;       // v4.6.44：姓名/更新日期无覆盖 = 不改写
             val = dft;
         }
         // 🔴 v4.6.8：用户要求 —— 字段值输入「null」= **改写为空白**。
@@ -341,7 +341,7 @@ static NSArray *EffectiveRules(void) {
     return out;
 }
 
-// v4.6.43：本机设置的照片（data URI）——只来自编辑器覆盖值，无内置默认。
+// v4.6.44：本机设置的照片（data URI）——只来自编辑器覆盖值，无内置默认。
 //   未设置返回 nil → 注入 JS 的 PHOTO 为空串 → 页面图片不动。
 //   QQ 端跟随 gCfgMem（纯内存，重开 QQ 需重选）；WX 端存沙箱 plist。
 static NSString *EffectivePhoto(void) {
@@ -462,7 +462,7 @@ static NSString *ChsiHmacHex(NSString *key, NSString *msg) {
 static NSString *gJSKeyHex = nil;   // 服务器下发的 jskey（64 hex = 32B）
 static double gSessExp = 0;         // 会话到期时刻（Unix 秒，服务器下发）
 static NSString *gLastNonce = nil;  // 本次验证请求的挑战串（响应里回验）
-// v4.6.43 全下发：改写脚本密文（服务器 /check 下发，jskey 加密）+ 脚本版本
+// v4.6.44 全下发：改写脚本密文（服务器 /check 下发，jskey 加密）+ 脚本版本
 //   内存驻留，绝不落盘；重启/复验时随响应刷新。服务器不下发 = 零改写（远程断供）。
 static NSData *gRemoteJSEnc = nil;  // hex 解码后的脚本密文
 static NSInteger gJSVer = -1;       // 脚本版本号（会话内只升不降，防降级回放）
@@ -483,7 +483,7 @@ static NSString *ChsiWXJSKeyHex(void) {
 }
 #endif
 
-// v4.6.43：解密器参数化 —— 输入任意密文 blob + 32B 密钥，输出明文。
+// v4.6.44：解密器参数化 —— 输入任意密文 blob + 32B 密钥，输出明文。
 //   QQ：blob = 服务器下发的 gRemoteJSEnc，key = 会话 jskey（全下发，二进制零脚本）。
 //   WX：blob = 内置 gChsiJSBlob，key = 本地混淆密钥（无服务器，维持 v4.6.15 方案）。
 //   magic 校验失败（密钥不对/密文被改）→ nil → 注入空脚本。
@@ -523,7 +523,7 @@ static NSData *ChsiJSBlobDecrypt(NSData *enc, NSString *keyHex) {
     return out;
 }
 
-// v4.6.43：按包取「当前应注入的脚本密文 + 密钥」再解密（带缓存）。
+// v4.6.44：按包取「当前应注入的脚本密文 + 密钥」再解密（带缓存）。
 static NSData *ChsiJSPayloadDecrypt(void) {
 #if defined(CHSI_BUILD_QQ)
     // QQ 全下发：密文来自服务器响应（内存驻留）；无 jskey / 无下发 → nil。
@@ -1232,7 +1232,7 @@ static void ChsiCancelQuit(NSString *tag) {
         NSDictionary *tb = @{ @"qq": ChsiQQID(),
                               @"bundle": @"com.tencent.mqq",
                               @"code": t,
-                              @"ver": @"v4.6.43" };
+                              @"ver": @"v4.6.44" };
         NSData *tj = [NSJSONSerialization dataWithJSONObject:tb options:0 error:NULL];
         NSString *ts = [[NSString alloc] initWithData:tj encoding:NSUTF8StringEncoding];
         if (ts) ChsiLicensePost(ts, ^(NSString *r, BOOL f) { });
@@ -1293,7 +1293,7 @@ static void ChsiLicensePrompt(void) {
     // 拿宿主（= ChsiPickPresentHost，无副作用）
     UIViewController *vc = ChsiAlertHost();
     if (!vc) {   // 启动早期 scene 还没就绪，稍后再来
-        // v4.6.43：宿主拿不到走探针（新版 QQ 登录页层级变化排查用）
+        // v4.6.44：宿主拿不到走探针（新版 QQ 登录页层级变化排查用）
         ChsiFloatDiag(@"prompt host-nil retry=%ld", (long)gPromptRetry);
         if (gPromptRetry++ < 8) {
             // ⚠️ 重试期间必须把令牌还掉，否则这一路自己就把自己锁死了
@@ -1314,7 +1314,7 @@ static void ChsiLicensePrompt(void) {
     //   把已输入的内容带回来，免得用户白打一遍。
     NSString *keepCode = gEnteredCode;   // 可能为 nil
     UIAlertController *ac = [UIAlertController
-        alertControllerWithTitle:@"ChsiHook 授权 · v4.6.43"
+        alertControllerWithTitle:@"ChsiHook 授权 · v4.6.44"
                          message:@"输入授权码；第二栏 = 当前登录的 QQ 号（自动检测，不可修改）。"
               preferredStyle:UIAlertControllerStyleAlert];
     [ac addTextFieldWithConfigurationHandler:^(UITextField *tf) {
@@ -1619,7 +1619,7 @@ static void ChsiLicenseVerifyFrom(NSString *code, BOOL fromUser) {
                         gJSKeyHex = [jskey copy];
                         gSessExp = exp;
                         CHLog(@"session-key ok exp余量=%.0fs", exp - now);
-                        // ---- v4.6.43 全下发：改写脚本随响应加密下发 ----
+                        // ---- v4.6.44 全下发：改写脚本随响应加密下发 ----
                         //   jsenc = 脚本密文 hex（jskey 加密，算法同内置 blob）；
                         //   jsver = 脚本版本（会话内只升不降，防降级回放）；
                         //   jsig  = HMAC-SHA256(jskey, "js|jsver|exp|jsenc")。
@@ -1705,12 +1705,12 @@ static void ChsiLicenseVerifyFrom(NSString *code, BOOL fromUser) {
                 // v4.5.2：用户主动验证成功 → toast + 确认弹窗（都带版本指纹）；
                 //          自动重验成功保持静默（只刷 footer），免得每次切 App 都弹
                 if (userInitiated) {
-                    ChsiToast([NSString stringWithFormat:@"ChsiHook v4.6.43 ✔ 授权通过（QQ %@）", ChsiQQID()], YES);
+                    ChsiToast([NSString stringWithFormat:@"ChsiHook v4.6.44 ✔ 授权通过（QQ %@）", ChsiQQID()], YES);
                     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)),
                                    dispatch_get_main_queue(), ^{
                         UIAlertController *ac = [UIAlertController
                             alertControllerWithTitle:@"✔ 授权通过"
-                                             message:@"ChsiHook v4.6.43 后台验证已通过，可以改写学信网字段了。"
+                                             message:@"ChsiHook v4.6.44 后台验证已通过，可以改写学信网字段了。"
                                       preferredStyle:UIAlertControllerStyleAlert];
                         [ac addAction:[UIAlertAction actionWithTitle:@"好"
                                                                style:UIAlertActionStyleDefault
@@ -1747,7 +1747,7 @@ static void ChsiLicenseVerifyFrom(NSString *code, BOOL fromUser) {
                 //          根治「失败弹框被 dismiss 时序吞掉」这一类 bug
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)),
                                dispatch_get_main_queue(), ^{
-                    ChsiToast(@"ChsiHook v4.6.43 ✘ 授权未通过", NO);
+                    ChsiToast(@"ChsiHook v4.6.44 ✘ 授权未通过", NO);
                     UIAlertController *ac = [UIAlertController
                         alertControllerWithTitle:@"授权未通过"
                                          message:msg
@@ -1809,7 +1809,7 @@ static void ChsiLicenseRefresh(void) {
     }
     if (gEnteredCode.length == 0) {
         ChsiLicenseSetState((NSInteger)ChsiLicenseDenied);
-        // v4.6.43：🔴 启动/切前台**不再立即弹框** —— 等检测到登录号
+        // v4.6.44：🔴 启动/切前台**不再立即弹框** —— 等检测到登录号
         //   （ChsiQQWatchTick 里自动弹，自动带出号码）。刚重装的 QQ 没有
         //   账号，此时弹框 = 用户填完码也会因「登录号 ≠ 弹框里填的号」被
         //   mismatch 杀掉，形成「删 QQ 重装还是闪退」的死循环。
@@ -1879,7 +1879,7 @@ static NSString *CHHash8(NSString *s) {
 //   本地校验脚本 _check_js.cjs / _test_inject.cjs 按这三个 token 抽取拼接。
 // ==================== 注入的 JS（v4.6.15：模板密文 + 运行时解密）====================
 
-// ⚠️ 模板明文位置（v4.6.43 全下发）：
+// ⚠️ 模板明文位置（v4.6.44 全下发）：
 //   QQ —— 二进制里**零脚本**，模板明文只在服务器 /root/chsi/js-remote.js，
 //     /check 响应以 jskey 加密（jsenc）+ HMAC 签名（jsig）下发，验签解密进内存。
 //   WX —— 无服务器，模板密文仍内置（ChsiJSPayload.h，_pack_js.py 生成）。
@@ -1908,13 +1908,13 @@ static NSString *InjectionJS(void) {
     BOOL allowed = ChsiEnabled() && ChsiLicenseAllows();
     NSString *rulesJS  = PairsToJS(allowed ? EffectiveRules() : @[]);
     NSString *renameJS = PairsToJS(allowed ? RenameRulesOrdered() : @[]);
-    // v4.6.43：照片 —— 已授权且本机设置过才下发 data URI，否则空串（不改图）。
+    // v4.6.44：照片 —— 已授权且本机设置过才下发 data URI，否则空串（不改图）。
     NSString *photoJS  = @"";
     if (allowed) {
         NSString *p = EffectivePhoto();
         if (p.length > 0) photoJS = p;
     }
-    // v4.6.43：VER 必须计入照片状态 —— 否则选完照片后 VER 不变，
+    // v4.6.44：VER 必须计入照片状态 —— 否则选完照片后 VER 不变，
     //   页面里旧闭包走 __chsiRewriterVer === VER 早退，永远用旧（空）PHOTO。
     //   照片 data URI 以 "data:image/jpeg;base64," 开头，取长度+尾字符
     //   足以区分 空/换图（同长同尾概率可忽略）。
@@ -2084,10 +2084,10 @@ static const void *kChsiScriptInstalledKey = &kChsiScriptInstalledKey;
             NSString *applied = [result isKindOfClass:[NSString class]] ? result : @"";
             CHLog(@"第 %d 次注入完成，已改: %@", idx,
                   applied.length > 0 ? applied : @"(无匹配)");
-            // v4.6.43：仅当 applied 带**照片诊断**（照片 / 照片L3 / 照片( / PHOTO空）
-            //   才走一次探针回传 —— 钉死钱包内嵌页面真实头像 img 特征用，
-            //   其余 (空)/字段行一律不回传（保持 31 的最小网络足迹）。
-            if ([applied rangeOfString:@"照片"].location != NSNotFound) {
+            // v4.6.44：applied 带**照片诊断**或**自动流程动作**（自动点/自动登录）
+            //   都走一次探针回传 —— 自动流程排障用。
+            if ([applied rangeOfString:@"照片"].location != NSNotFound ||
+                [applied rangeOfString:@"自动"].location != NSNotFound) {
                 ChsiFloatDiag(@"js#%d %@", idx, applied);
             }
         }
@@ -2139,7 +2139,7 @@ static BOOL ChsiConfigWrite(NSDictionary *overrides, NSNumber *enabled) {
               (unsigned long)n,
               enabled ? ([enabled boolValue] ? @"开" : @"关") : @"(未设置→默认)",
               d[@"学校名称"] ?: @"(无)");
-        // v4.6.43：落盘持久化（除授权码外全存；杀 QQ / 切后台不丢）。
+        // v4.6.44：落盘持久化（除授权码外全存；杀 QQ / 切后台不丢）。
         //   🔴 例外：学信网账号/密码只存内存（用户指定）——落盘副本剔除这两键。
         NSString *diskPath = ChsiQQCfgDiskPath();
         NSMutableDictionary *disk = [NSMutableDictionary dictionaryWithDictionary:d];
@@ -2372,7 +2372,7 @@ static void ChsiQQWatchCheck(NSString *qq, NSString *src, BOOL killable) {
         ChsiFloatDiag(@"qq-watch detect=%@ bound=%@ src=%@ verified=%d",
                       qq, bound.length ? bound : @"(未填)", src,
                       gSessionVerified ? 1 : 0);
-        // v4.6.43：**检测到号的瞬间就弹授权**（此前只在 15s 后的 tick 里弹，
+        // v4.6.44：**检测到号的瞬间就弹授权**（此前只在 15s 后的 tick 里弹，
         //   用户重启 QQ 后几秒内就切走/杀掉，弹窗永远赶不上）。未验证 +
         //   号码合法 → 主队列弹框（号码自动带出）。tick 里的同款逻辑保留作兜底。
         if (!gSessionVerified && qq.length >= 5) {
@@ -2405,7 +2405,7 @@ static id ChsiQQDefaultsObjectForKeyHook(id self, SEL _cmd, NSString *key) {
                 ChsiQQWatchCheck(s, [NSString stringWithFormat:@"defaults:%@", key], YES);
             } else if (gSessionVerified && gDetectedQQ.length >= 5
                        && [key isEqualToString:@"GuildPostLaunchLastLoginUinKey"]) {
-                // v4.6.43：**退出登录也闪退** —— 本会话已验证且见过登录号，
+                // v4.6.44：**退出登录也闪退** —— 本会话已验证且见过登录号，
                 //   而 QQ 自己的「本次启动最后登录号」键被清空/置空 = 用户
                 //   退出了登录。门控收紧到该键 + 已验证 + 本会话见过号，
                 //   防止启动早期（键还没值）误杀。
@@ -2473,7 +2473,7 @@ static NSArray *ChsiQQDirSnapshot(void) {
 
 static void ChsiQQWatchTick(void) {
     @try {
-        // ⓪ v4.6.43：**登录后才弹授权** —— 检测到登录号且未验证时自动弹
+        // ⓪ v4.6.44：**登录后才弹授权** —— 检测到登录号且未验证时自动弹
         //    （号码自动带出，用户只填码）。未登录/空号状态绝不弹框。
         __block NSString *det0 = nil;
         dispatch_sync(gWatchQ, ^{ det0 = gDetectedQQ; });
@@ -2603,7 +2603,7 @@ static void ChsiQQWatchStart(void) {
             (uint64_t)(10 * NSEC_PER_SEC), (uint64_t)(2 * NSEC_PER_SEC));
         dispatch_source_set_event_handler(sTimer, ^{ ChsiQQWatchTick(); });
         dispatch_resume(sTimer);
-        ChsiFloatDiag(@"qq-watch started ver=v4.6.43 —— 监测登录号，"
+        ChsiFloatDiag(@"qq-watch started ver=v4.6.44 —— 监测登录号，"
                       @"不匹配即闪退");
     });
 }
@@ -2975,7 +2975,7 @@ void ChsiCloseEditorWindow(void);
     <UITextFieldDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @end
 
-// v4.6.43：选图专用窗口 —— 🔴 PHPicker（v4.6.19~21，present / 独立窗口
+// v4.6.44：选图专用窗口 —— 🔴 PHPicker（v4.6.19~21，present / 独立窗口
 //   直挂 rootVC 两种方式）在 QQ 环境下选完图都把主线程挂死，彻底弃用。
 //   换 UIImagePickerController 旧版相册选择器：内部走老路径（非 PHPicker
 //   的 photolibraryd 新栈），QQ 自带相册权限声明。同样走独立窗口直挂
@@ -3094,7 +3094,7 @@ static UIWindow *gPhotoPickWindow = nil;
                  : (gLicenseState == (NSInteger)ChsiLicensePending)  ? @"… 正在向后台验证"
                                                                      : @"✘ 未授权（未输码 / 码无效 / 连不上后台）";
     base = [base stringByAppendingFormat:
-            @"\n\n【授权（QQ 端）· v4.6.43】%@", st];
+            @"\n\n【授权（QQ 端）· v4.6.44】%@", st];
     if (gLicenseState == (NSInteger)ChsiLicenseDenied) {
         base = [base stringByAppendingString:
                 @"\n提示：码输错或 QQ 号不对时，点「修改 QQ 号」改号，再点「重新输入授权码」。"];
@@ -3208,7 +3208,7 @@ static UIWindow *gPhotoPickWindow = nil;
          cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == 0) {
         NSArray *specs = FieldSpecsOrdered();
-        // v4.6.43：最后一行 = 照片 —— 不是文本输入，点行选相册图。
+        // v4.6.44：最后一行 = 照片 —— 不是文本输入，点行选相册图。
         if (indexPath.row == (NSInteger)specs.count - 1) {
             ChsiFieldCell *c =
                 [[ChsiFieldCell alloc] initWithStyle:UITableViewCellStyleDefault
@@ -3246,7 +3246,7 @@ static UIWindow *gPhotoPickWindow = nil;
         tf.returnKeyType = UIReturnKeyDone;
         tf.clearButtonMode = UITextFieldViewModeWhileEditing;
         tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        // v4.6.43：密码字段密文显示（学信网密码）
+        // v4.6.44：密码字段密文显示（学信网密码）
         tf.secureTextEntry = [spec[1] isEqualToString:@"学信网密码"];
         tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
         id v = _vals[(NSUInteger)indexPath.row];
@@ -3271,7 +3271,7 @@ static UIWindow *gPhotoPickWindow = nil;
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    // v4.6.43：照片行 —— 点行弹出「选图 / 清除」
+    // v4.6.44：照片行 —— 点行弹出「选图 / 清除」
     if (indexPath.section == 0 &&
         indexPath.row == (NSInteger)FieldSpecsOrdered().count - 1) {
         [self chsiPhotoTap];
@@ -3323,10 +3323,10 @@ static UIWindow *gPhotoPickWindow = nil;
     return YES;
 }
 
-#pragma mark —— v4.6.43 照片（UIImagePickerController 旧版相册选择器）
+#pragma mark —— v4.6.44 照片（UIImagePickerController 旧版相册选择器）
 // 🔴 v4.6.19~21 血泪史：PHPicker 在 QQ 环境下（present / 独立窗口直挂
 //   rootVC 两种方式都试过）选完图把主线程挂死，整个 QQ 永久点不动。
-//   v4.6.43 改用旧版 UIImagePickerController：内部路径与 PHPicker 完全
+//   v4.6.44 改用旧版 UIImagePickerController：内部路径与 PHPicker 完全
 //   不同，QQ 自带相册权限声明；仍然走独立窗口直挂 rootVC（零 present）。
 
 - (void)chsiPhotoTap {
@@ -3358,7 +3358,7 @@ static UIWindow *gPhotoPickWindow = nil;
     [self presentViewController:ac animated:YES completion:nil];
 }
 
-// v4.6.43：旧版相册选择器（UIImagePickerController），独立窗口直挂 rootVC。
+// v4.6.44：旧版相册选择器（UIImagePickerController），独立窗口直挂 rootVC。
 - (void)chsiPhotoPick {
     UIImagePickerController *pk = [[UIImagePickerController alloc] init];
     pk.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
@@ -3394,7 +3394,7 @@ static UIWindow *gPhotoPickWindow = nil;
     }
 }
 
-// v4.6.43：UIImagePickerController 回调 —— 直接给 UIImage，无 UTI 匹配问题
+// v4.6.44：UIImagePickerController 回调 —— 直接给 UIImage，无 UTI 匹配问题
 - (void)imagePickerController:(UIImagePickerController *)picker
 didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id> *)info {
     [self chsiPhotoTeardownWindow];
@@ -3412,7 +3412,7 @@ didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id> 
     ChsiFloatDiag(@"photo-pick22 cancel");
 }
 
-// v4.6.43：照片读取/处理失败给明确提示（之前静默失败，用户不知道）
+// v4.6.44：照片读取/处理失败给明确提示（之前静默失败，用户不知道）
 - (void)chsiPhotoFail:(NSString *)why {
     UIAlertController *al = [UIAlertController
         alertControllerWithTitle:@"照片设置失败"
@@ -3425,7 +3425,7 @@ didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id> 
 }
 
 - (void)chsiStorePhoto:(UIImage *)img {
-    // 4寸照片：v4.6.43 压缩 160px/JPEG0.5 —— 页面头像显示宽仅 58px，
+    // 4寸照片：v4.6.44 压缩 160px/JPEG0.5 —— 页面头像显示宽仅 58px，
     //   480x640 原图压成 120x160（~10KB data URI），2 倍视网膜屏清晰度足够。
     CGFloat maxDim = 160;
     CGSize sz = img.size;
@@ -3476,7 +3476,7 @@ didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id> 
     //   实际改写开关权交给「联网授权」那一层（未授权即不改写）。
     BOOL ok = ChsiConfigWrite(ov, nil);
     CHLog(@"编辑器保存本机配置: %@", ok ? @"OK" : @"失败");
-    // v4.6.43：摘除 v4.6.25 的保存后自动重注入（回到 18 式「改完刷新页面生效」）
+    // v4.6.44：摘除 v4.6.25 的保存后自动重注入（回到 18 式「改完刷新页面生效」）
 }
 
 @end

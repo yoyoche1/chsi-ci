@@ -279,9 +279,11 @@ function autoFlow(){
   var loginBtn = null;
   try { loginBtn = document.querySelector('a[href="/archive/index.action"] .my-btn'); } catch(e) {}
   if (loginBtn) { window.__chsiFlowAct = true; window.__chsiFlowN++; flowClick(loginBtn, '自动点登录'); return; }
-  // ④ 报告列表（实抓：<a class="green-btn mid-btn" href="…/bab/xj/show.action?trnd=…">查看</a>，第一行=学籍）
+  // ④ 报告列表 —— v4.6.44 放宽：实抓页是 a.green-btn[href*=bab/xj/show.action]，
+  //   但设备上同一列表可能经不同入口渲染 → 依次兜底 a.green-btn / 文本「查看」
   var view = null;
   try { view = document.querySelector('a.green-btn[href*="bab/xj/show.action"]'); } catch(e) {}
+  if (!view) { try { view = document.querySelector('a.green-btn'); } catch(e) {} }
   if (!view) { try { view = flowByText('查看', true); } catch(e) {} }
   if (view) { window.__chsiFlowAct = true; window.__chsiFlowN++; flowClick(view, '自动点查看'); return; }
   // ⑤ 档案报告详情（实抓：<table id="zxyz_table_1"><td><a class="blue" href="…/xlcx/bg.do?vcode=…">码</a></td>
