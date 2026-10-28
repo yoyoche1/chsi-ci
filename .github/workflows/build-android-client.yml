@@ -1,0 +1,52 @@
+name: build-android-client
+on:
+  push:
+    paths: ['android-client/**', '.github/workflows/build-android-client.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install pkg
+        run: npm install -g @yao-pkg/pkg
+      - name: Build Windows exe
+        run: pkg android-client/client.js --targets node20-win-x64 --output ChsiHookClient.exe
+      - name: Package Termux installer
+        run: |
+          cd android-client
+          B64=$(gzip -9 -c client.js | base64 -w0)
+          {
+            echo '#!/data/data/com.termux/files/usr/bin/bash'
+            echo '# ChsiHook Termux 一键安装（内嵌加密客户端，装完删源码）'
+            echo 'set -e'
+            echo 'pkg install -y nodejs-lts'
+            echo 'npm install -g bytenode'
+            echo 'mkdir -p ~/chsi && cd ~/chsi'
+            echo "echo '$B64' | base64 -d | gunzip > client.js"
+            echo 'node -e "require(\"bytenode\").compileFile({filename:\"client.js\",output:\"client.jsc\"})"'
+            echo 'rm -f client.js'
+            echo "cat > run.sh <<'EOF2'"
+            echo '#!/data/data/com.termux/files/usr/bin/bash'
+            echo 'cd ~/chsi && exec node -e "require(\"bytenode\");require(\"./client.jsc\")" 2>&1'
+            echo 'EOF2'
+            echo 'chmod +x run.sh'
+            echo 'cp config.json ~/chsi/config.json 2>/dev/null || true'
+            echo 'echo "安装完成。运行: ~/chsi/run.sh"'
+          } > termux-install.sh
+          chmod +x termux-install.sh
+      - name: Verify exe
+        run: |
+          ls -la ChsiHookClient.exe
+          file ChsiHookClient.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chsi-android-client
+          path: |
+            ChsiHookClient.exe
+            android-client/client.js
+            android-client/config.json
+            android-client/termux-install.sh
