@@ -37,7 +37,11 @@ const EMBED = {
   },
 };
 
-function log(...a) { console.log(new Date().toISOString().slice(11, 19), ...a); }
+function log(...a) {
+  const s = new Date().toISOString().slice(11, 19) + ' ' + a.join(' ');
+  console.log(s);
+  try { fs.appendFileSync(path.join(WRITABLE, 'log.txt'), s + '\n'); } catch (e) {}
+}
 function sh(cmd) {
   try {
     return execSync(cmd, { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -181,6 +185,7 @@ let stateLog = [];
 function slog(...a) {
   const s = new Date().toISOString().slice(11, 19) + ' ' + a.join(' ');
   console.log(s); stateLog.push(s);
+  try { fs.appendFileSync(path.join(WRITABLE, 'log.txt'), s + '\n'); } catch (e) {}
   if (stateLog.length > 200) stateLog.shift();
 }
 
