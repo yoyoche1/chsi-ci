@@ -304,6 +304,8 @@ const PS1_SRC = [
   "$t1 = Add-Ctl (New-Object Windows.Forms.Label) 20 15; $t1.Text = 'ChsiHook 安卓客户端'; $t1.AutoSize = $true; $t1.Font = New-Object Drawing.Font('微软雅黑', 11, [Drawing.FontStyle]::Bold); $t1.ForeColor = [Drawing.Color]::FromArgb(88,166,255)",
   "$t2 = Add-Ctl (New-Object Windows.Forms.Label) 20 50; $t2.Text = '设备码（发给管理员换授权码）'; $t2.AutoSize = $true; $t2.ForeColor = [Drawing.Color]::FromArgb(139,148,158)",
   "$lbDev = Add-Ctl (New-Object Windows.Forms.Label) 20 70; $lbDev.Text = '…'; $lbDev.AutoSize = $true; $lbDev.Font = New-Object Drawing.Font('Consolas', 14, [Drawing.FontStyle]::Bold); $lbDev.ForeColor = [Drawing.Color]::FromArgb(240,136,62)",
+  "$btnCopy = Add-Ctl (New-Object Windows.Forms.Button) 230 66; $btnCopy.Text = '复制'; $btnCopy.Width = 80; $btnCopy.Height = 32",
+  "$btnCopy.Add_Click({ try { [Windows.Forms.Clipboard]::SetText($lbDev.Text); $btnCopy.Text = '已复制 ✓'; $btnCopy.ForeColor = [Drawing.Color]::FromArgb(63,185,80) } catch {} })",
   "$t3 = Add-Ctl (New-Object Windows.Forms.Label) 20 105; $t3.Text = '授权码'; $t3.AutoSize = $true",
   "$tbCode = Add-Ctl (New-Object Windows.Forms.TextBox) 20 125; $tbCode.Width = 380",
   "$t4 = Add-Ctl (New-Object Windows.Forms.Label) 20 160; $t4.Text = '姓名（留空 = 不改写）'; $t4.AutoSize = $true",
