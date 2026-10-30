@@ -360,13 +360,29 @@ const PS1_SRC = [
   "[Windows.Forms.Application]::Run($form)",
 ].join('\r\n');
 
+function startWebGuiAndOpen() {
+  startWebGui();
+  try { execSync('start "" "http://127.0.0.1:' + GUI_PORT + '"', { shell: 'cmd.exe', timeout: 5000, stdio: 'ignore' }); } catch (e) {}
+}
 function startPsWindow() {
   const p1 = path.join(WRITABLE, 'ui.ps1');
-  try { fs.writeFileSync(p1, '\ufeff' + PS1_SRC, 'utf8'); } catch (e) { slog('ui.ps1 写入失败:', e.message); return; }
+  try { fs.writeFileSync(p1, '\ufeff' + PS1_SRC, 'utf8'); } catch (e) { slog('ui.ps1 写入失败:', e.message); startWebGuiAndOpen(); return; }
   try {
-    spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, detached: true, stdio: 'ignore' }).unref();
-    slog('设置窗口已打开（关闭窗口不会停止改写；重启 exe 可再打开）');
-  } catch (e) { slog('窗口启动失败:', e.message, '—— Termux 网页界面仍可用'); startWebGui(); }
+    const errFd = fs.openSync(path.join(WRITABLE, 'ui-error.log'), 'a');
+    const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, detached: true, stdio: ['ignore', 'ignore', errFd] });
+    ps.unref();
+    slog('设置窗口进程已启动 (pid=' + ps.pid + ')，窗口未出现请看 ui-error.log');
+    setTimeout(() => {
+      try {
+        if (ps.exitCode !== null || ps.signalCode) {
+          slog('⚠ 窗口进程提前退出(code=' + ps.exitCode + ',signal=' + ps.signalCode + ')——改用网页界面，详情见 ui-error.log');
+          startWebGuiAndOpen();
+        } else {
+          slog('窗口进程运行中 ✓');
+        }
+      } catch (e) {}
+    }, 6000);
+  } catch (e) { slog('窗口启动失败:', e.message); startWebGuiAndOpen(); }
 }
 
 // ---------- CDP ----------
