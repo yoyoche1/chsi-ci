@@ -311,13 +311,16 @@ function psUiScript() {
     "$form.MaximizeBox = $false",
     "$form.BackColor = [Drawing.Color]::White",
     "$form.TopMost = $true",
-    "$form.Add_Shown({",
+    "$showTm = New-Object Windows.Forms.Timer",
+    "$showTm.Interval = 800",
+    "$showTm.Add_Tick({",
     "  try {",
-    "    Start-Sleep -Milliseconds 800",
-    "    Add-Type -Namespace N3 -Name W3 -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'",
+    "    Add-Type -Namespace N3 -Name W3 -MemberDefinition '[DllImport(\'user32.dll\')] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'",
     "    [N3.W3]::ShowWindow($form.Handle, 5) | Out-Null",
+    "    $showTm.Stop()",
     "  } catch {}",
     "})",
+    "$showTm.Start()",
     "function Add-Ctl($c, $x, $y) { $c.Location = New-Object Drawing.Point($x, $y); $form.Controls.Add($c); return $c }",
     "$title = Add-Ctl (New-Object Windows.Forms.Label) 24 20; $title.Text = '高校认证'; $title.AutoSize = $true; $title.Font = New-Object Drawing.Font('Segoe UI', 17, [Drawing.FontStyle]::Bold); $title.ForeColor = [Drawing.Color]::FromArgb(29,29,31)",
     "$sub = Add-Ctl (New-Object Windows.Forms.Label) 24 62; $sub.Text = 'QQ 学信网认证辅助 · 本机运行'; $sub.AutoSize = $true; $sub.Font = New-Object Drawing.Font('Segoe UI', 9); $sub.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
@@ -388,7 +391,6 @@ function psUiScript() {
     "    }",
     "    if (-not $st) { $script:dead = [int]$script:dead + 1; if ($script:dead -ge 2) { $form.Close() }; return }",
     "    $script:dead = 0",
-    "    }",
     "    if ($st.devCode) { $tbDev.Text = [string]$st.devCode }",
     "    if ($st.authed) { $lbSt.Text = '● 已授权 · 注入运行中'; $lbSt.ForeColor = [Drawing.Color]::FromArgb(52,199,89) }",
     "    else { $lbSt.Text = '● 未授权 / 等待设备'; $lbSt.ForeColor = [Drawing.Color]::FromArgb(255,59,48) }",
@@ -402,7 +404,7 @@ function psUiScript() {
 function startPsWindow() {
   try {
     const b64 = Buffer.from(psUiScript(), 'utf16le').toString('base64');
-    spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-WindowStyle', 'Minimized', '-EncodedCommand', b64], { cwd: WRITABLE, windowsHide: true, stdio: 'ignore' }).unref();
+    spawn('conhost.exe', ['--headless', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-EncodedCommand', b64], { cwd: WRITABLE, windowsHide: true, stdio: 'ignore' }).unref();
     log('设置窗口已打开（后台运行）');
   } catch (e) { log('窗口启动失败:', e.message); }
 }
