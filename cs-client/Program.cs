@@ -289,9 +289,7 @@ namespace ChsiClient
                         try
                         {
                             Adb($"-s {dev} forward tcp:{port} localabstract:{sk}");
-                            var req = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{port}/json");
-                            req.Headers.Host = "localhost";
-                            var pages = JsonDocument.Parse(await (await http.SendAsync(req)).Content.ReadAsStringAsync());
+                            var pages = JsonDocument.Parse(await http.GetStringAsync($"http://127.0.0.1:{port}/json"));
                             var urls = new List<string>();
                             foreach (var pg2 in pages.RootElement.EnumerateArray())
                                 if (pg2.TryGetProperty("url", out var u2)) urls.Add(u2.GetString());
