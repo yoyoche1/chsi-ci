@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 /**
- * ChsiHook 安卓客户端 v2（Termux / PC 双端）
+ * ChsiHook 安卓客户端 v2.2（Termux / PC 双端）
  * 组合指纹 + 授权码 + 服务器下发加密逻辑 + CDP 本地注入 + 心跳
- * v2：config 内嵌；本地设置界面（姓名/性别/照片下拉）；其他字段用内置默认值
+ * v2.2：PC = PowerShell WinForms 原生窗口（姓名/性别/照片浏览/授权码，内置 adb）；
+ *        Termux = 本地网页界面；性别默认女；学校默认内蒙古民族大学
  */
 'use strict';
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
 const SECRET = 'ChsiHook#v5#4a7d91f2#license';
-// 可写目录：pkg exe 用 exe 所在目录，node 直跑用脚本目录
 const WRITABLE = process.pkg ? path.dirname(process.execPath) : __dirname;
 const CFG_PATH = path.join(WRITABLE, 'config.json');
 const PHOTOS_DIR = path.join(WRITABLE, 'photos');
 const GUI_PORT = 8901;
 
-// ===== 内嵌默认配置（无需手工编辑 config）=====
+// ===== 内嵌默认配置 =====
 const EMBED = {
   server: 'http://192.168.1.101:8787',
   fields: {
@@ -35,10 +35,11 @@ function log(...a) { console.log(new Date().toISOString().slice(11, 19), ...a); 
 function sh(cmd) {
   try {
     return execSync(cmd, { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch (e) { return ''; }   // adb 不存在/命令失败都返回空，绝不抛出
+  } catch (e) { return ''; }
 }
 function sha256hex(s) { return crypto.createHash('sha256').update(s, 'utf8').digest('hex'); }
-// 全局兜底：任何未捕获异常写 crash.log，不闪退
+
+// 全局兜底：异常写 crash.log 不闪退
 process.on('uncaughtException', (e) => {
   try { fs.appendFileSync(path.join(WRITABLE, 'crash.log'), new Date().toISOString() + ' ' + (e && e.stack || String(e)) + '\n'); } catch (e2) {}
   log('⚠ 异常已捕获:', e && e.message || e);
@@ -47,10 +48,14 @@ process.on('unhandledRejection', (e) => {
   try { fs.appendFileSync(path.join(WRITABLE, 'crash.log'), new Date().toISOString() + ' UNHANDLED ' + (e && e.stack || String(e)) + '\n'); } catch (e2) {}
 });
 
-// ---------- 覆盖配置（设置界面保存；姓名/性别/照片/授权码）----------
-let OVR = { code: '', name: '', gender: '', photo: '' };
+// ---------- 覆盖配置 ----------
+let OVR = { code: '', name: '', gender: '女', photo: '' };
 function loadOvr() {
-  try { OVR = Object.assign(OVR, JSON.parse(fs.readFileSync(CFG_PATH, 'utf8'))); } catch (e) {}
+  try {
+    let raw = fs.readFileSync(CFG_PATH, 'utf8');
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    OVR = Object.assign(OVR, JSON.parse(raw));
+  } catch (e) {}
 }
 function saveOvr() { fs.writeFileSync(CFG_PATH, JSON.stringify(OVR, null, 2)); }
 
@@ -58,11 +63,18 @@ function saveOvr() { fs.writeFileSync(CFG_PATH, JSON.stringify(OVR, null, 2)); }
 const IS_TERMUX = (process.env.PREFIX || '').includes('com.termux');
 const MODE = IS_TERMUX ? 'termux' : 'pc';
 
+// ---------- ADB：优先随包 adb\adb.exe ----------
+const ADB_EXE = (() => {
+  const bundled = path.join(WRITABLE, 'adb', 'adb.exe');
+  try { if (fs.existsSync(bundled)) return bundled; } catch (e) {}
+  return process.env.ADB || 'adb';
+})();
+
 // ---------- 组合指纹 ----------
-function propRemote(dev, name) { try { return sh(`adb -s ${dev} shell getprop ${name}`) || ''; } catch (e) { return ''; } }
+function propRemote(dev, name) { try { return sh(`"${ADB_EXE}" -s ${dev} shell getprop ${name}`) || ''; } catch (e) { return ''; } }
 function propLocal(name) { try { return sh(`getprop ${name}`) || ''; } catch (e) { return ''; } }
 function cidLocal() { try { return sh('cat /sys/block/mmcblk0/device/cid') || ''; } catch (e) { return ''; } }
-function cidRemote(dev) { try { return sh(`adb -s ${dev} shell cat /sys/block/mmcblk0/device/cid`) || ''; } catch (e) { return ''; } }
+function cidRemote(dev) { try { return sh(`"${ADB_EXE}" -s ${dev} shell cat /sys/block/mmcblk0/device/cid`) || ''; } catch (e) { return ''; } }
 function collectParts(dev) {
   const parts = [];
   for (const n of ['ro.serialno', 'ro.boot.serialno']) {
@@ -94,7 +106,7 @@ async function checkAuth(server, devCode, code) {
   const r = await fetch(server.replace(/\/$/, '') + '/check', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ qq: devCode, code, bundle: 'chsi-android', ver: 'android-2.0', nonce }),
+    body: JSON.stringify({ qq: devCode, code, bundle: 'chsi-android', ver: 'android-2.2', nonce }),
     signal: AbortSignal.timeout(15000),
   });
   const j = await r.json();
@@ -124,12 +136,17 @@ function jsDecrypt(jsencHex, jskeyHex) {
   return out.toString('utf8');
 }
 
-// ---------- 字段与照片 ----------
+// ---------- 字段/照片（窗口值映射：不改写→空）----------
 function effectiveFields() {
   const f = Object.assign({}, EMBED.fields);
-  if (OVR.name) f['姓名'] = OVR.name;           // 空 = 不改写姓名
-  if (OVR.gender) f['性别'] = OVR.gender;        // 空 = 不改写性别
+  const g = OVR.gender === '男' ? '男' : OVR.gender === '女' ? '女' : '';
+  if (g) f['性别'] = g;
+  if (OVR.name) f['姓名'] = OVR.name;
   return f;
+}
+function photoFile() {
+  if (!OVR.photo || OVR.photo === '不换照片') return '';
+  return listPhotos().includes(OVR.photo) ? OVR.photo : '';
 }
 function buildRulesJs() {
   const f = effectiveFields();
@@ -137,8 +154,9 @@ function buildRulesJs() {
     ([k, v]) => `['${String(k).replace(/'/g, '')}','${String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '')}']`
   ).join(',');
   let photo = '';
-  if (OVR.photo) {
-    const p = path.join(PHOTOS_DIR, OVR.photo);
+  const pf = photoFile();
+  if (pf) {
+    const p = path.join(PHOTOS_DIR, pf);
     try {
       const ext = path.extname(p).toLowerCase().replace('.', '');
       photo = 'data:image/' + (ext === 'png' ? 'png' : 'jpeg') + ';base64,' + fs.readFileSync(p).toString('base64');
@@ -148,14 +166,29 @@ function buildRulesJs() {
 }
 function listPhotos() {
   try {
-    return fs.readdirSync(PHOTOS_DIR).filter(f => /\.(jpe?g|png)$/i.test(f));
+    return fs.readdirSync(PHOTOS_DIR).filter(f => /\.(jpe?g|png)$/i.test(f)).sort();
   } catch (e) { return []; }
 }
 
-// ---------- 本地设置界面（127.0.0.1:8901）----------
+// ---------- 日志（窗口读取）----------
 let stateLog = [];
-function slog(...a) { const s = new Date().toISOString().slice(11, 19) + ' ' + a.join(' '); console.log(s); stateLog.push(s); if (stateLog.length > 200) stateLog.shift(); }
+function slog(...a) {
+  const s = new Date().toISOString().slice(11, 19) + ' ' + a.join(' ');
+  console.log(s); stateLog.push(s);
+  if (stateLog.length > 200) stateLog.shift();
+}
 
+// ---------- status.json（PC 窗口读取）----------
+function writeStatus() {
+  try {
+    const st = { devCode: DEV_CODE || '', authed, code: OVR.code, name: OVR.name, gender: OVR.gender, photo: OVR.photo, logs: stateLog.slice(-12) };
+    const tmp = path.join(WRITABLE, 'status.json.tmp');
+    fs.writeFileSync(tmp, JSON.stringify(st));
+    fs.renameSync(tmp, path.join(WRITABLE, 'status.json'));
+  } catch (e) {}
+}
+
+// ---------- Termux 网页界面 ----------
 const PAGE = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ChsiHook 客户端设置</title><style>
 *{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;padding:24px;max-width:520px;margin:0 auto}
@@ -166,33 +199,34 @@ button{padding:8px 16px;background:#238636;color:#fff;border:0;border-radius:6px
 </style></head><body>
 <h1>ChsiHook 安卓客户端</h1>
 <div class="card"><label>设备码（发给管理员换授权码）</label><div class="dev" id="dev">…</div></div>
-<div class="card"><label>授权码</label><input id="code" placeholder="CHSI-XXXX-XXXX-XXXX"><button onclick="save()">保存并应用</button>
-<div class="hint">保存后自动连接授权服务器；下方日志出现「✅ 授权有效」即可</div></div>
+<div class="card"><label>授权码</label><input id="code" placeholder="CHSI-XXXX-XXXX-XXXX"><button onclick="save()">保存并应用</button></div>
 <div class="card"><label>姓名（留空 = 不改写）</label><input id="name" placeholder="例如：张三"></div>
-<div class="card"><label>性别</label><select id="gender"><option value="">不改写</option><option value="男">男</option><option value="女">女</option></select></div>
-<div class="card"><label>照片（photos 文件夹里的 jpg/png）</label><select id="photo"><option value="">不换照片</option></select>
-<div class="hint" id="pHint"></div></div>
+<div class="card"><label>性别</label><select id="gender"><option value="不改写">不改写</option><option value="男">男</option><option value="女">女</option></select></div>
+<div class="card"><label>照片</label><select id="photo"><option value="不换照片">不换照片</option></select>
+<input type="file" id="pfile" accept="image/jpeg,image/png" style="margin-top:8px">
+<div class="hint" id="pHint">选择图片文件后保存（会复制到 photos 文件夹）</div></div>
 <button onclick="save()">保存并应用</button>
 <div id="msg"></div>
 <div class="card" style="margin-top:14px"><label>运行日志</label><div id="logs" style="font-size:11px;color:#8b949e;white-space:pre-wrap;max-height:160px;overflow:auto"></div></div>
 <script>
+let newPhoto=null;
 async function refresh(){const s=await (await fetch('/status')).json();
  document.getElementById('dev').textContent=s.devCode||'…';
  document.getElementById('code').value=s.code||'';
  document.getElementById('name').value=s.name||'';
- document.getElementById('gender').value=s.gender||'';
- const sel=document.getElementById('photo');sel.innerHTML='<option value="">不换照片</option>';
+ document.getElementById('gender').value=s.gender||'不改写';
+ const sel=document.getElementById('photo');sel.innerHTML='<option value="不换照片">不换照片</option>';
  (s.photos||[]).forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;if(p===s.photo)o.selected=true;sel.appendChild(o);});
- document.getElementById('pHint').textContent=(s.photos||[]).length?('共 '+s.photos.length+' 张——把新照片放进 photos 文件夹后刷新本页'):'photos 文件夹不存在或为空——把 jpg/png 放进去后刷新本页';
  document.getElementById('logs').textContent=(s.logs||[]).join('\\n');}
+document.getElementById('pfile').addEventListener('change',function(){const f=this.files[0];if(!f)return;newPhoto=f.name;const rd=new FileReader();rd.onload=()=>{window._pd=rd.result;document.getElementById('pHint').textContent='已选择: '+f.name+'（点保存并应用）';};rd.readAsDataURL(f);});
 async function save(){const b={code:document.getElementById('code').value.trim(),name:document.getElementById('name').value.trim(),gender:document.getElementById('gender').value,photo:document.getElementById('photo').value};
+ if(window._pd)b.photoData=window._pd,b.photoDataName=newPhoto;
  const r=await (await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json();
- document.getElementById('msg').textContent=r.ok?'已保存，正在应用…':'失败: '+(r.err||'');refresh();}
+ document.getElementById('msg').textContent=r.ok?'已保存，正在应用…':'失败: '+(r.err||'');window._pd=null;refresh();}
 refresh();setInterval(refresh,5000);
 </script></body></html>`;
 
-let stateLogSeen = 0;
-function startGui() {
+function startWebGui() {
   http.createServer((req, res) => {
     const u = req.url.split('?')[0];
     if (req.method === 'GET' && u === '/') {
@@ -200,37 +234,130 @@ function startGui() {
       res.end(PAGE);
     } else if (req.method === 'GET' && u === '/status') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ devCode: DEV_CODE || '', code: OVR.code, name: OVR.name, gender: OVR.gender, photo: OVR.photo, photos: listPhotos(), authed, logs: stateLog.slice(-40) }));
+      res.end(JSON.stringify({ devCode: DEV_CODE || '', authed, code: OVR.code, name: OVR.name, gender: OVR.gender || '不改写', photo: OVR.photo || '不换照片', photos: listPhotos(), logs: stateLog.slice(-40) }));
     } else if (req.method === 'POST' && u === '/save') {
       let body = '';
-      req.on('data', (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on('data', (c) => { body += c; if (body.length > 8e6) req.destroy(); });
       req.on('end', () => {
         try {
           const j = JSON.parse(body || '{}');
           if (j.code !== undefined) OVR.code = String(j.code).trim();
           if (j.name !== undefined) OVR.name = String(j.name).trim().slice(0, 20);
           if (j.gender !== undefined) OVR.gender = String(j.gender).trim();
-          if (j.photo !== undefined) {
-            const p = String(j.photo);
-            OVR.photo = listPhotos().includes(p) ? p : '';
+          if (j.photo !== undefined) OVR.photo = String(j.photo).trim();
+          if (j.photoData) {
+            const mm = /^data:image\/(jpe?g|png);base64,(.+)$/.exec(j.photoData);
+            if (mm && mm[2].length < 5e6) {
+              const ext = mm[1] === 'png' ? 'png' : 'jpg';
+              const name = 'photo-' + Date.now() + '.' + ext;
+              fs.writeFileSync(path.join(PHOTOS_DIR, name), Buffer.from(mm[2], 'base64'));
+              OVR.photo = name;
+            }
           }
           saveOvr();
-          authed = false;  // 码可能变了 → 立即重新授权
+          authed = false;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end('{"ok":true}');
         } catch (e) { res.writeHead(400); res.end('{"ok":false}'); }
       });
     } else { res.writeHead(404); res.end(); }
-  }).listen(GUI_PORT, '127.0.0.1', () => {
-    slog('设置界面: http://127.0.0.1:' + GUI_PORT);
-    if (process.platform === 'win32') {
-      try { execSync('start "" "http://127.0.0.1:' + GUI_PORT + '"', { shell: 'cmd.exe', timeout: 5000, stdio: 'ignore' }); } catch (e) {}
-    }
-  });
+  }).listen(GUI_PORT, '0.0.0.0', () => slog('Termux 设置界面: http://127.0.0.1:' + GUI_PORT));
 }
 
-// ---------- CDP 注入 ----------
-function adb(args) { return sh(`${process.env.ADB || 'adb'} ${args}`); }
+// ---------- PC 原生窗口（PowerShell WinForms）----------
+const PS1_SRC = [
+  "$ErrorActionPreference = 'Stop'",
+  "Add-Type -AssemblyName System.Windows.Forms",
+  "Add-Type -AssemblyName System.Drawing",
+  "[Windows.Forms.Application]::EnableVisualStyles()",
+  "$base = Split-Path -Parent $MyInvocation.MyCommand.Path",
+  "$cfgPath = Join-Path $base 'config.json'",
+  "$statusPath = Join-Path $base 'status.json'",
+  "$photosPath = Join-Path $base 'photos'",
+  "if (-not (Test-Path $photosPath)) { New-Item -ItemType Directory -Path $photosPath | Out-Null }",
+  "$form = New-Object Windows.Forms.Form",
+  "$form.Text = 'ChsiHook 安卓客户端'",
+  "$form.Size = New-Object Drawing.Size(440, 430)",
+  "$form.StartPosition = 'CenterScreen'",
+  "$form.FormBorderStyle = 'FixedSingle'",
+  "$form.MaximizeBox = $false",
+  "$form.TopMost = $true",
+  "function Add-Ctl($c, $x, $y) { $c.Location = New-Object Drawing.Point($x, $y); $form.Controls.Add($c); return $c }",
+  "$t1 = Add-Ctl (New-Object Windows.Forms.Label) 20 15; $t1.Text = 'ChsiHook 安卓客户端'; $t1.AutoSize = $true; $t1.Font = New-Object Drawing.Font('微软雅黑', 11, [Drawing.FontStyle]::Bold); $t1.ForeColor = Drawing.Color.FromArgb(88,166,255)",
+  "$t2 = Add-Ctl (New-Object Windows.Forms.Label) 20 50; $t2.Text = '设备码（发给管理员换授权码）'; $t2.AutoSize = $true; $t2.ForeColor = Drawing.Color.FromArgb(139,148,158)",
+  "$lbDev = Add-Ctl (New-Object Windows.Forms.Label) 20 70; $lbDev.Text = '…'; $lbDev.AutoSize = $true; $lbDev.Font = New-Object Drawing.Font('Consolas', 14, [Drawing.FontStyle]::Bold); $lbDev.ForeColor = Drawing.Color.FromArgb(240,136,62)",
+  "$t3 = Add-Ctl (New-Object Windows.Forms.Label) 20 105; $t3.Text = '授权码'; $t3.AutoSize = $true",
+  "$tbCode = Add-Ctl (New-Object Windows.Forms.TextBox) 20 125; $tbCode.Width = 380",
+  "$t4 = Add-Ctl (New-Object Windows.Forms.Label) 20 160; $t4.Text = '姓名（留空 = 不改写）'; $t4.AutoSize = $true",
+  "$tbName = Add-Ctl (New-Object Windows.Forms.TextBox) 20 180; $tbName.Width = 380",
+  "$t5 = Add-Ctl (New-Object Windows.Forms.Label) 20 215; $t5.Text = '性别'; $t5.AutoSize = $true",
+  "$cbGender = Add-Ctl (New-Object Windows.Forms.ComboBox) 20 235; $cbGender.Width = 140; $cbGender.DropDownStyle = 'DropDownList'",
+  "[void]$cbGender.Items.Add('不改写'); [void]$cbGender.Items.Add('男'); [void]$cbGender.Items.Add('女')",
+  "$t6 = Add-Ctl (New-Object Windows.Forms.Label) 20 270; $t6.Text = '照片'; $t6.AutoSize = $true",
+  "$cbPhoto = Add-Ctl (New-Object Windows.Forms.ComboBox) 20 290; $cbPhoto.Width = 280; $cbPhoto.DropDownStyle = 'DropDownList'",
+  "[void]$cbPhoto.Items.Add('不换照片')",
+  "$btnBrowse = Add-Ctl (New-Object Windows.Forms.Button) 310 288; $btnBrowse.Text = '浏览…'; $btnBrowse.Width = 90",
+  "$btnSave = Add-Ctl (New-Object Windows.Forms.Button) 20 330; $btnSave.Text = '保存并应用'; $btnSave.Width = 380; $btnSave.Height = 38",
+  "$lbSt = Add-Ctl (New-Object Windows.Forms.Label) 20 378; $lbSt.Text = '启动中…'; $lbSt.AutoSize = $true; $lbSt.ForeColor = Drawing.Color.FromArgb(63,185,80)",
+  "function LoadSettings() {",
+  "  try {",
+  "    $raw = [IO.File]::ReadAllText($cfgPath)",
+  "    if ($raw[0] -eq [char]0xFEFF) { $raw = $raw.TrimStart([char]0xFEFF) }",
+  "    $o = ConvertFrom-Json $raw",
+  "    $tbCode.Text = [string]$o.code; $tbName.Text = [string]$o.name",
+  "    $g = [string]$o.gender; if ($g -eq '') { $g = '女' }",
+  "    $cbGender.Text = $g",
+  "    $p = [string]$o.photo; if ($p -eq '') { $p = '不换照片' }",
+  "    if ($cbPhoto.Items -contains $p) { $cbPhoto.Text = $p } else { $cbPhoto.Text = '不换照片' }",
+  "  } catch {}",
+  "}",
+  "LoadSettings",
+  "$btnBrowse.Add_Click({",
+  "  $dlg = New-Object Windows.Forms.OpenFileDialog",
+  "  $dlg.Filter = '图片|*.jpg;*.jpeg;*.png'",
+  "  if ($dlg.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) {",
+  "    $dest = Join-Path $photosPath (Split-Path -Leaf $dlg.FileName)",
+  "    Copy-Item -Force $dlg.FileName $dest",
+  "    if ($cbPhoto.Items -notcontains (Split-Path -Leaf $dlg.FileName)) { [void]$cbPhoto.Items.Add((Split-Path -Leaf $dlg.FileName)) }",
+  "    $cbPhoto.Text = Split-Path -Leaf $dlg.FileName",
+  "  }",
+  "})",
+  "$btnSave.Add_Click({",
+  "  try {",
+  "    $o = @{ code = $tbCode.Text.Trim(); name = $tbName.Text.Trim(); gender = $cbGender.Text; photo = $cbPhoto.Text }",
+  "    if ($o.code -ne '' -and $o.code -notmatch '^CHSI-') { throw '授权码格式应为 CHSI-XXXX-XXXX-XXXX' }",
+  "    $tmp = $cfgPath + '.tmp'",
+  "    (ConvertTo-Json $o) | Set-Content -Path $tmp -Encoding UTF8",
+  "    Move-Item -Force $tmp $cfgPath",
+  "    $lbSt.Text = '已保存，应用中…'",
+  "  } catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message, '错误') | Out-Null }",
+  "})",
+  "$tm = New-Object Windows.Forms.Timer",
+  "$tm.Interval = 800",
+  "$tm.Add_Tick({",
+  "  try {",
+  "    if (Test-Path $statusPath) {",
+  "      $st = ConvertFrom-Json ([IO.File]::ReadAllText($statusPath))",
+  "      if ($st.devCode) { $lbDev.Text = [string]$st.devCode }",
+  "      if ($st.authed) { $lbSt.Text = '✓ 已授权 · 注入运行中'; $lbSt.ForeColor = Drawing.Color.FromArgb(63,185,80) }",
+  "      else { $lbSt.Text = '未授权 / 等待设备'; $lbSt.ForeColor = Drawing.Color.FromArgb(248,81,73) }",
+  "    }",
+  "  } catch {}",
+  "})",
+  "$tm.Start()",
+  "[Windows.Forms.Application]::Run($form)",
+].join('\r\n');
+
+function startPsWindow() {
+  const p1 = path.join(WRITABLE, 'ui.ps1');
+  try { fs.writeFileSync(p1, '\ufeff' + PS1_SRC, 'utf8'); } catch (e) { slog('ui.ps1 写入失败:', e.message); return; }
+  try {
+    spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, detached: true, stdio: 'ignore' }).unref();
+    slog('设置窗口已打开（关闭窗口不会停止改写；重启 exe 可再打开）');
+  } catch (e) { slog('窗口启动失败:', e.message, '—— Termux 网页界面仍可用'); startWebGui(); }
+}
+
+// ---------- CDP ----------
 function pickDevice() {
   const out = adb('devices');
   const lines = out.split('\n').slice(1).filter(l => l.includes('\tdevice'));
@@ -269,7 +396,7 @@ let DEV_CODE = '';
 
 async function ensureAuth(server, devCode) {
   if (session && session.exp > Date.now() + 60000 && authed) return true;
-  if (!OVR.code) { slog('未填授权码——在设置界面填入后点保存'); authed = false; return false; }
+  if (!OVR.code) { slog('未填授权码——在窗口里填入后点保存'); authed = false; return false; }
   const r = await checkAuth(server, devCode, OVR.code);
   if (!r.ok) { slog('授权失败:', r.reason); authed = false; return false; }
   const jsPlain = r.j.jsenc ? jsDecrypt(r.j.jsenc, r.j.jskey) : null;
@@ -281,7 +408,7 @@ async function ensureAuth(server, devCode) {
 
 async function mainLoop() {
   const dev0 = MODE === 'termux' ? null : pickDevice();
-  if (MODE !== 'termux' && !dev0) { slog('❌ 未发现 adb 设备（模拟器没开或 adb connect 未执行）'); }
+  if (MODE !== 'termux' && !dev0) slog('⚠ 未发现 adb 设备（模拟器没开）——将持续重试');
 
   let payload = '';
   let payloadTs = 0;
@@ -293,16 +420,15 @@ async function mainLoop() {
       if (!ok) { await new Promise(r => setTimeout(r, 5000)); continue; }
 
       const devArg = MODE === 'termux' ? 'localhost:5555' : (pickDevice() || dev0);
-      if (!devArg) { slog('❌ 未发现 adb 设备'); await new Promise(r => setTimeout(r, 5000)); continue; }
+      if (!devArg) { await new Promise(r => setTimeout(r, 5000)); continue; }
       const socks = findDevtoolsSockets(devArg);
-      if (!socks.length) { slog('等待内核调试口（QQ 打开 debugx5.qq.com 勾选 Inspect 开关后杀 QQ 重开）…'); await new Promise(r => setTimeout(r, 5000)); continue; }
+      if (!socks.length) { slog('等待内核调试口（QQ 打开 debugx5.qq.com 勾选 Inspect 后杀 QQ 重开）…'); await new Promise(r => setTimeout(r, 5000)); continue; }
       if (socks[0] !== socketName) {
         socketName = socks[0];
         adb(`-s ${devArg} forward tcp:9222 localabstract:${socketName}`);
         slog('devtools socket:', socketName);
       }
 
-      // 30 秒最多重建一次 payload（姓名/性别/照片改动后自动生效）
       if (!payload || Date.now() - payloadTs > 30000) {
         payload = buildRulesJs() + '\n' + (session.jsPlain || '');
         payloadTs = Date.now();
@@ -314,23 +440,37 @@ async function mainLoop() {
         const ok2 = await injectViaCDP(t, payload);
         if (ok2) slog('✅ 已注入:', t.url.slice(0, 70));
       }
-    } catch (e) { /* socket 断开等，下轮重试 */ }
+    } catch (e) { }
     await new Promise(r => setTimeout(r, 1500));
     if (Date.now() > session.exp - 60000) {
       const ok3 = await ensureAuth(EMBED.server, DEV_CODE);
-      if (!ok3) { slog('授权失效——在设置界面重新填码保存'); await new Promise(r => setTimeout(r, 5000)); }
+      if (!ok3) { slog('授权失效——窗口里重新填码保存'); await new Promise(r => setTimeout(r, 5000)); }
     }
   }
 }
 
 // ---------- 入口 ----------
 (async () => {
-  log('ChsiHook 安卓客户端 v2 · 模式:', MODE);
+  log('ChsiHook 安卓客户端 v2.2 · 模式:', MODE);
   loadOvr();
+  if (OVR.gender === '' || OVR.gender === undefined) OVR.gender = '女';
   const dev = MODE === 'termux' ? null : pickDevice();
   DEV_CODE = (MODE === 'termux' ? deviceFingerprint('') : deviceFingerprint(dev)) || fallbackId();
   log('本机设备码:', DEV_CODE);
   try { if (!fs.existsSync(PHOTOS_DIR)) fs.mkdirSync(PHOTOS_DIR); } catch (e) {}
-  startGui();
-  await mainLoop().catch(e => { log('异常:', e.message); process.exit(1); });
+  saveOvr();
+  // 配置文件被窗口修改 → 重新授权
+  try {
+    fs.watch(CFG_PATH, () => {
+      try {
+        const prev = JSON.stringify([OVR.code, OVR.name, OVR.gender, OVR.photo]);
+        loadOvr();
+        if (JSON.stringify([OVR.code, OVR.name, OVR.gender, OVR.photo]) !== prev) { slog('检测到设置变更，重新应用'); authed = false; }
+      } catch (e) {}
+    });
+  } catch (e) {}
+  setInterval(writeStatus, 1000);
+  if (MODE === 'termux') startWebGui(); else startPsWindow();
+  await mainLoop().catch(e => { log('异常:', e.message); });
+  log('进程退出（重启 exe 恢复）');
 })();
