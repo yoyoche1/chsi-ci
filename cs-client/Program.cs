@@ -27,6 +27,12 @@ namespace ChsiClient
 
 
         // ===== 变形壳：PE 自引用密钥链 + 分点旋转掩码 + 蜜罐（自研）=====
+
+        public static void Dlog(string m)
+        {
+            try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "log.txt"), DateTime.Now.ToString("HH:mm:ss") + " " + m + NL, Encoding.UTF8); } catch { }
+        }
+
         static class Obf
         {
             static readonly byte[] BK = new byte[]{20,41,66,127,54,250,144,10,131,133,97,188,53,59,154,56,2,167,217,21,51,199,229,158,15,215,81,118,113,182,9,19};
@@ -177,7 +183,7 @@ namespace ChsiClient
         }
 
         // ===== 授权（单次）=====
-        public static async Task<bool> AuthOnce(string code)
+        public static async Task<(bool ok, string reason)> AuthOnce(string code)
         {
             try
             {
@@ -189,26 +195,26 @@ namespace ChsiClient
                 var resp = await http.PostAsync(SERVER + "/check",
                     new StringContent(body, Encoding.UTF8, "application/json"));
                 var j = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
-                if (!j.GetProperty("ok").GetBoolean()) return false;
+                if (!j.GetProperty("ok").GetBoolean()) return (false, "服务器拒绝：" + (j.TryGetProperty("reason", out var rr) ? rr.GetString() : "unknown"));
                 var exp = j.GetProperty("exp").GetInt64();
-                if (exp < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) return false;
+                if (exp < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) return (false, "授权已过期");
                 var jskey = j.GetProperty("jskey").GetString();
                 var rsaSig = j.TryGetProperty("rsa_sig", out var rs) ? rs.GetString() : null;
-                if (string.IsNullOrEmpty(rsaSig)) return false;
+                if (string.IsNullOrEmpty(rsaSig)) return (false, "服务器未返回 rsa_sig");
                 var msg = $"{DevCode}|{exp}|{nonce}|{jskey}";
                 using var rsa = RSA.Create();
                 rsa.ImportFromPem(RSA_PUB);
                 var okSig = rsa.VerifyData(Encoding.UTF8.GetBytes(msg), Convert.FromBase64String(rsaSig), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-                if (!okSig) return false;
+                if (!okSig) return (false, "rsa_sig 验签失败");
                 string jsPlain = "";
                 if (j.TryGetProperty("jsenc", out var je))
                 {
                     jsPlain = JsDecrypt(je.GetString(), jskey);
                 }
-                Auth = new Session { Exp = exp, JsPlain = jsPlain };
-                return true;
+                Auth = new Session { Exp = exp, JsPlain = jsPlain }; Dlog("auth ok exp=" + exp);
+                return (true, "ok");
             }
-            catch { return false; }
+            catch (Exception ex) { Dlog("auth exc: " + ex.Message); return (false, "网络/异常：" + ex.Message); }
         }
 
         // ===== jsenc 解密（与服务器一致的 XOR 块流）=====
@@ -341,9 +347,9 @@ namespace ChsiClient
         static void Main()
         {
             ApplicationConfiguration.Initialize();
-            if (Obf.Debugged()) Environment.Exit(1);
+            Program.Dlog("start");
             Obf.SelfCheck();
-            new Thread(() => { while (true) { Thread.Sleep(15000); try { if (Obf.Debugged()) Environment.Exit(1); } catch { } } }) { IsBackground = true }.Start();
+            
             // 设备码：先随机保证立即可见，异步精化
             var rng = new byte[8]; RandomNumberGenerator.Fill(rng);
             DevCode = (BigIntParse(Convert.ToHexString(rng)) % 10000000000).ToString("D10");
@@ -473,12 +479,13 @@ namespace ChsiClient
             var code = tbCode.Text.Trim(); var name = tbName.Text.Trim();
             var gender = rbM.Checked ? "男" : "女";
             lbSt.ForeColor = Color.FromArgb(134, 134, 139); lbSt.Text = "● 授权校验中…";
-            var ok = await Program.AuthOnce(code);
+            var (ok, reason) = await Program.AuthOnce(code);
             if (!ok)
             {
                 Program.Exiting = true;
-                lbSt.ForeColor = Color.FromArgb(255, 59, 48); lbSt.Text = "● 授权未通过（设备码 " + Program.DevCode + "）——1.5 秒后退出";
-                await Task.Delay(1500);
+                lbSt.ForeColor = Color.FromArgb(255, 59, 48);
+                lbSt.Text = "● " + reason + "（设备码 " + Program.DevCode + "）——2 秒后退出";
+                await Task.Delay(2000);
                 Application.Exit();
                 return;
             }
