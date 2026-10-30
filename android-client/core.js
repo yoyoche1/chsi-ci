@@ -1,7 +1,6 @@
 'use strict';
 // 解密壳运行时：还原分片密钥 → AES-256-GCM 解密载荷 → 执行（本文件会被编译成 V8 字节码）
 'use strict';
-require('bytenode');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
