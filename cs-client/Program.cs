@@ -128,6 +128,14 @@ namespace ChsiClient
 
         public class Session { public long Exp; public string JsPlain; }
 
+        const string REG = @"HKEY_CURRENT_USER\Software\ChsiAuth";
+        static string LastUsed() => Microsoft.Win32.Registry.GetValue(REG, "used", null) as string;
+        static void MarkUsed(string c) { try { Microsoft.Win32.Registry.SetValue(REG, "used", c); } catch { } }
+        static string Rotate(string code)
+        {
+            try { var v = (BigIntParse(code) + 1) % 10000000000; return v.ToString("D10"); } catch { return code; }
+        }
+
         public static string AppDir => AppContext.BaseDirectory;
 
         public static string AdbExe
@@ -301,7 +309,13 @@ namespace ChsiClient
                     }
                     if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
 
-                    if (await InjectViaCdp(hitWs, payload)) log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)]);
+                    if (await InjectViaCdp(hitWs, payload))
+                    {
+                        log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)] + "——3 秒后自动退出");
+                        MarkUsed(DevCode);
+                        Thread.Sleep(3000);
+                        Environment.Exit(0);
+                    }
                 }
                 catch (Exception e) { log("循环异常: " + e.Message); }
                 await Task.Delay(1500, ct);
@@ -353,7 +367,7 @@ namespace ChsiClient
             // 设备码：先随机保证立即可见，异步精化
             var rng = new byte[8]; RandomNumberGenerator.Fill(rng);
             DevCode = (BigIntParse(Convert.ToHexString(rng)) % 10000000000).ToString("D10");
-            Task.Run(() => { Thread.Sleep(2500); var fp = DeviceFingerprint(PickDevice()); if (fp != null) DevCode = fp; });
+            Task.Run(() => { Thread.Sleep(2500); var fp = DeviceFingerprint(PickDevice()); if (fp != null) { if (LastUsed() == fp) fp = Rotate(fp); DevCode = fp; } });
             Application.Run(new MainForm());
         }
     }
