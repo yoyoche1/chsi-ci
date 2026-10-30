@@ -283,9 +283,9 @@ namespace ChsiClient
 
                     Adb($"-s {dev} forward --remove-all");
                     string hitUrl = null, hitWs = null;
-                    int port = NextPort();
                     foreach (var sk in socks)
                     {
+                        int port = NextPort();
                         try
                         {
                             Adb($"-s {dev} forward tcp:{port} localabstract:{sk}");
