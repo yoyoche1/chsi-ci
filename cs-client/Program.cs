@@ -64,7 +64,8 @@ namespace ChsiClient
                 for (int i = 0; i < b.Length; i++)
                 {
                     byte m = K[(i + site * 7) % 32];
-                    b[i] = (byte)((b[i] ^ m) >>> rot | (b[i] ^ m) << (8 - rot) & 0xff);
+                    int v = (b[i] >>> rot) | (b[i] << (8 - rot));
+                    b[i] = (byte)((v & 0xff) ^ m);
                 }
                 return Encoding.UTF8.GetString(b);
             }
@@ -362,6 +363,7 @@ namespace ChsiClient
         {
             ApplicationConfiguration.Initialize();
             Program.Dlog("start");
+            Program.Dlog("server=" + SERVER + " pub=" + RSA_PUB.Substring(0, 26));
             Obf.SelfCheck();
             
             // 设备码：先随机保证立即可见，异步精化
