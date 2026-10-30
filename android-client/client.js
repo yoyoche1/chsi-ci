@@ -33,9 +33,19 @@ const EMBED = {
 
 function log(...a) { console.log(new Date().toISOString().slice(11, 19), ...a); }
 function sh(cmd) {
-  return execSync(cmd, { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  try {
+    return execSync(cmd, { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch (e) { return ''; }   // adb 不存在/命令失败都返回空，绝不抛出
 }
 function sha256hex(s) { return crypto.createHash('sha256').update(s, 'utf8').digest('hex'); }
+// 全局兜底：任何未捕获异常写 crash.log，不闪退
+process.on('uncaughtException', (e) => {
+  try { fs.appendFileSync(path.join(WRITABLE, 'crash.log'), new Date().toISOString() + ' ' + (e && e.stack || String(e)) + '\n'); } catch (e2) {}
+  log('⚠ 异常已捕获:', e && e.message || e);
+});
+process.on('unhandledRejection', (e) => {
+  try { fs.appendFileSync(path.join(WRITABLE, 'crash.log'), new Date().toISOString() + ' UNHANDLED ' + (e && e.stack || String(e)) + '\n'); } catch (e2) {}
+});
 
 // ---------- 覆盖配置（设置界面保存；姓名/性别/照片/授权码）----------
 let OVR = { code: '', name: '', gender: '', photo: '' };
