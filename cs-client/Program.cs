@@ -316,9 +316,10 @@ namespace ChsiClient
             var txt = Adb("-s " + dev + " shell cat /proc/net/unix");
             foreach (var line in txt.Split('\n'))
             {
-                var m = System.Text.RegularExpressions.Regex.Match(line, @"(\\S*devtools_remote\\S*)\\s*$");
+                var m = System.Text.RegularExpressions.Regex.Match(line, @"\S*devtools_remote\S*\s*$");
                 if (m.Success) out0.Add(m.Groups[1].Value.TrimStart('@'));
             }
+            Dlog("sockets: " + out0.Count + " [" + string.Join(",", out0.Take(4)) + "]");
             return out0.Distinct().ToList();
         }
 
