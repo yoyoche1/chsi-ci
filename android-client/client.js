@@ -39,8 +39,16 @@ const EMBED = {
 
 // ===== 全内存状态（零磁盘产物）=====
 const memLog = [];
-function log(...a) {
+function dlog(...a) {
+  const line = new Date().toISOString() + ' ' + a.join(' ');
+  try {
+    const fs = require('fs');
+    const p = require('path');
+    fs.appendFileSync(p.join(WRITABLE, 'log.txt'), line + '\r\n', 'utf8');
+  } catch (e) {}
+}function log(...a) {
   const s = new Date().toISOString().slice(11, 19) + ' ' + a.join(' ');
+  dlog(...a);
   memLog.push(s);
   if (memLog.length > 120) memLog.shift();
 }
@@ -255,7 +263,7 @@ function startWeb() {
   http.createServer((req, res) => {
     const u = req.url.split('?')[0];
     if (req.method === 'GET' && u === '/ui') {
-      res.writeHead(200, { 'Content-Type': 'application/hta; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(uiHtml());
     } else if (req.method === 'GET' && u === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -298,7 +306,6 @@ function startWeb() {
 // ===== HTA 原生设置窗口（mshta = GUI，无控制台无浏览器）
 function uiHtml() {
   return `<!DOCTYPE html><html lang="zh-CN"><head>
-<hta:application applicationname="高校认证" border="thin" caption="yes" maximizebutton="no" minimizebutton="yes" showintaskbar="yes" singleinstance="yes" sysmenu="yes" scroll="no" contextmenu="no">
 <meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=11">
 <title>高校认证</title><style>
 body{margin:0;background:#fff;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#1d1d1f}
@@ -319,7 +326,7 @@ button{background:#f2f2f7;color:#007aff;border:0;border-radius:8px;padding:6px 1
 .logs{margin-top:10px;background:#f2f2f7;border-radius:10px;padding:9px 11px;font-size:12px;color:#86868b;min-height:52px}
 #photoFile{display:none}
 #photoName{font-size:12px;color:#86868b;margin-left:8px}
-</style></head><body onload="window.resizeTo(430,600)"><div class="app">
+</style></head><body><div class="app">
 <h1>高校认证</h1><div class="sub">QQ 学信网认证辅助 · 本机运行</div>
 <label>设备码（发给管理员换授权码）</label><div class="devrow"><span class="devcode" id="dev"></span><button onclick="copyDev(this)">复制</button></div>
 <label>授权码</label><input type="text" id="code">
@@ -344,7 +351,7 @@ else{$("st").className="st bad";$("st").innerHTML="● 已退出"}
 setTimeout(refresh,1000);}};x.send()}
 setInterval(function(){var ok=$("code").value.replace(/\s/g,"")&&$("name").value.replace(/\s/g,"")&&photoData;$("save").className=ok?"on":""},300);
 function onPhoto(){var f=$("photoFile").files;if(!f||!f[0])return;var r=new FileReader();r.onload=function(){photoData=r.result;$("photoName").innerHTML=esc(f[0].name)};r.readAsDataURL(f[0])}
-function copyDev(btn){var t=$("dev").innerHTML||"";try{window.clipboardData.setData("Text",t)}catch(e){}btn.innerHTML="已复制 ✓"}
+function copyDev(btn){var t=$("dev").innerHTML||"";try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t)}else if(window.clipboardData){window.clipboardData.setData("Text",t)}}catch(e){}btn.innerHTML="已复制 ✓"}
 function saveAll(){
 var gs=document.getElementsByName("g"),g="";for(var i=0;i<gs.length;i++){if(gs[i].checked)g=gs[i].value}
 var body={code:$("code").value.replace(/^\s+|\s+$/g,""),name:$("name").value.replace(/^\s+|\s+$/g,""),gender:g,photoData:photoData,photoName:$("photoName").innerHTML||"photo"};
@@ -355,11 +362,6 @@ refresh();
 </script></body></html>`;
 }
 
-function startHtaWindow() {
-  if (MODE === 'termux') return;
-  try { spawn('mshta.exe', ['http://127.0.0.1:' + GUI_PORT + '/ui'], { windowsHide: true, stdio: 'ignore' }).unref(); log('设置窗口已打开'); }
-  catch (e) { log('打开窗口失败，请手动访问 http://127.0.0.1:' + GUI_PORT + '/ui'); }
-}
 
 // ===== 入口 =====
 (async () => {
@@ -367,6 +369,6 @@ function startHtaWindow() {
   DEV_CODE = currentDevCode(MODE === 'termux' ? null : pickDevice());
   log('本机设备码:', DEV_CODE);
   startWeb();
-  if (MODE !== 'termux') setTimeout(startHtaWindow, 800);
+  log('设置界面就绪：浏览器打开 http://127.0.0.1:' + GUI_PORT);
   await mainLoop().catch(e => log('异常:', e.message));
 })();
