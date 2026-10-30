@@ -11,19 +11,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install pkg + rcedit
         run: |
-          npm install -g @yao-pkg/pkg
+        run: npm install -g @yao-pkg/pkg
           npm install rcedit --prefix "$env:GITHUB_WORKSPACE\rt"
       - name: Build encrypted payload + core with k2
         run: node android-client/build-enc.js
       - name: Build exe (pkg bytecode, no icon)
         run: pkg android-client/package.json --output app.exe
-      - name: Apply icon (rcedit)
-        run: |
-          Set-Content -Path set-icon.js -Value "const rcedit = require(process.env.GITHUB_WORKSPACE + '/rt/node_modules/rcedit'); rcedit('app.exe', { icon: 'android-client/icon.ico' }).then(() => console.log('rcedit icon set')).catch(e => { console.error(e); process.exit(1); });" -Encoding UTF8
-          node set-icon.js
-          node -e "const fs=require('fs');const exe=fs.readFileSync('app.exe');let ok=0;for(let i=0;i<exe.length-16;i++){if(exe[i]===0x28&&exe[i+12]===1&&exe[i+14]===32){const w=exe.readUInt32LE(i+4),h=exe.readUInt32LE(i+8);if(w===h/2&&[16,32,48,64].includes(w))ok++}}console.log('BMP icon resources: '+ok)"
       - name: Patch PE subsystem to GUI
         run: |
           $bytes = [IO.File]::ReadAllBytes('app.exe')
