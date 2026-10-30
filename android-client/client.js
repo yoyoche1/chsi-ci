@@ -12,6 +12,12 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
+// ===== 启动标记（第一行就写：区分「exe 没启动」和「启动后崩溃」）=====
+try {
+  const _wdir = process.pkg ? path.dirname(process.execPath) : __dirname;
+  fs.appendFileSync(_wdir + '/log.txt', new Date().toISOString() + ' 启动 v2.3 pkg=' + !!process.pkg + ' cwd=' + process.cwd() + '\n');
+} catch (e) {}
+
 const SECRET = 'ChsiHook#v5#4a7d91f2#license';
 const WRITABLE = process.pkg ? path.dirname(process.execPath) : __dirname;
 const CFG_PATH = path.join(WRITABLE, 'config.json');
