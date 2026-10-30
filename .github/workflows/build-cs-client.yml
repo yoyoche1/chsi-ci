@@ -13,11 +13,11 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Publish single-file exe
         run: dotnet publish cs-client/ChsiClient.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionOnSingleFile=true -o out
-      - name: Install rcedit + force icon
+      - name: Force icon (rcedit binary)
         run: |
-          npm install rcedit
-          Set-Content -Path set-icon.js -Value "const rcedit = require('./node_modules/rcedit'); rcedit('out\高校认证.exe', { icon: 'cs-client/icon.ico' }).then(() => console.log('icon forced')).catch(e => { console.error(e); process.exit(1); });" -Encoding UTF8
-          node set-icon.js
+          Invoke-WebRequest -Uri 'https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe' -OutFile rcedit.exe
+          .\rcedit.exe "out\高校认证.exe" --set-icon "cs-client\icon.ico"
+          Write-Host 'icon forced'
 
       - name: Bundle adb + zip (UTF-8 names)
 
