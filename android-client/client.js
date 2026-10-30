@@ -79,6 +79,7 @@ const ADB_EXE = (() => {
   try { if (fs.existsSync(bundled)) return bundled; } catch (e) {}
   return process.env.ADB || 'adb';
 })();
+function adb(args) { return sh(`"${ADB_EXE}" ${args}`); }
 
 // ---------- 组合指纹 ----------
 function propRemote(dev, name) { try { return sh(`"${ADB_EXE}" -s ${dev} shell getprop ${name}`) || ''; } catch (e) { return ''; } }
