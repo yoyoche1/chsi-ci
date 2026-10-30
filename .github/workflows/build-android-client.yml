@@ -15,12 +15,7 @@ jobs:
         run: npm install -g @yao-pkg/pkg
       - name: Build encrypted payload + core with k2
         run: node android-client/build-enc.js
-      - name: Compile core to V8 bytecode
-        run: |
-          cd android-client
-          npm install bytenode --no-audit --no-fund
-          node -e "require('bytenode').compileFile({filename:'core_ci.js',output:'core.jsc'})"
-      - name: Build exe (icon applied during build)
+      - name: Build exe (icon + pkg native bytecode)
         run: pkg android-client/package.json --output ChsiHookClient.exe --icon android-client/icon.ico
       - name: Patch PE subsystem to GUI
         run: |
