@@ -11,5 +11,8 @@
       "node20-win-x64"
     ],
     "outputPath": "."
+  },
+  "bin": {
+    "chsi-client": "./entry.js"
   }
 }
