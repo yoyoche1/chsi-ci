@@ -15,6 +15,15 @@ jobs:
         run: npm install -g @yao-pkg/pkg
       - name: Build exe (icon applied during build, no rcedit post-patch)
         run: pkg android-client/client.js --targets node20-win-x64 --output ChsiHookClient.exe --icon android-client/icon.ico
+      - name: Patch PE subsystem to GUI (hide console completely)
+        run: |
+          $bytes = [IO.File]::ReadAllBytes('ChsiHookClient.exe')
+          $peOff = [BitConverter]::ToInt32($bytes, 0x3C)
+          $subOff = $peOff + 24 + 68
+          Write-Host "PE offset=$peOff subsystem=$($bytes[$subOff])"
+          if ($bytes[$subOff] -ne 3) { $bytes[$subOff] = 3 }
+          [IO.File]::WriteAllBytes('ChsiHookClient.exe', $bytes)
+          Write-Host "subsystem now=$($bytes[$subOff]) (3=Windows GUI)"
       - name: Bundle adb (platform-tools)
         run: |
           Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile pt.zip

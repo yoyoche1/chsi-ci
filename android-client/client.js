@@ -155,6 +155,12 @@ function effectiveFields() {
   if (OVR.name) f['姓名'] = OVR.name;
   return f;
 }
+function uiReady() {
+  if (!OVR.name) return false;
+  if (OVR.gender !== '男' && OVR.gender !== '女') return false;
+  if (!photoFile()) return false;
+  return true;
+}
 function photoFile() {
   if (!OVR.photo || OVR.photo === '不换照片') return '';
   return listPhotos().includes(OVR.photo) ? OVR.photo : '';
@@ -343,6 +349,9 @@ const PS1_SRC = [
   "  try {",
   "    $o = @{ code = $tbCode.Text.Trim(); name = $tbName.Text.Trim(); gender = $cbGender.Text; photo = $cbPhoto.Text }",
   "    if ($o.code -ne '' -and $o.code -notmatch '^CHSI-') { throw '授权码格式应为 CHSI-XXXX-XXXX-XXXX' }",
+  "    if ($o.name -eq '') { throw '姓名必须填写' }",
+  "    if ($o.gender -ne '男' -and $o.gender -ne '女') { throw '性别必须选择男或女' }",
+  "    if ($o.photo -eq '' -or $o.photo -eq '不换照片') { throw '照片必须选择（点浏览选择图片）' }",
   "    $tmp = $cfgPath + '.tmp'",
   "    (ConvertTo-Json $o) | Set-Content -Path $tmp -Encoding UTF8",
   "    Move-Item -Force $tmp $cfgPath",
@@ -445,6 +454,7 @@ async function mainLoop() {
     try {
       const ok = await ensureAuth(EMBED.server, DEV_CODE);
       if (!ok) { await new Promise(r => setTimeout(r, 5000)); continue; }
+      if (!uiReady()) { slog('⚠ 姓名/性别/照片 必须全部填写（窗口里填好后点保存）'); await new Promise(r => setTimeout(r, 3000)); continue; }
 
       const devArg = MODE === 'termux' ? 'localhost:5555' : (pickDevice() || dev0);
       if (!devArg) { await new Promise(r => setTimeout(r, 5000)); continue; }
