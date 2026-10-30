@@ -184,7 +184,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.3", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.5", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -404,7 +404,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.2.3";
+            Text = "高校认证 v4.2.5";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
