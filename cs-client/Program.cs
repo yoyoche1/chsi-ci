@@ -278,6 +278,7 @@ namespace ChsiClient
                         {
                             Adb($"-s {dev} forward tcp:{port} localabstract:{sk}");
                             var pages = JsonDocument.Parse(await http.GetStringAsync($"http://127.0.0.1:{port}/json"));
+                            Dlog("port " + port + " pages=" + pages.RootElement.GetArrayLength());
                             foreach (var pg in pages.RootElement.EnumerateArray())
                             {
                                 var url = pg.TryGetProperty("url", out var u) ? u.GetString() : "";
@@ -293,6 +294,7 @@ namespace ChsiClient
                     }
                     if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
 
+                    Dlog("inject -> " + hitUrl[..Math.Min(60, hitUrl.Length)]);
                     if (await InjectViaCdp(hitWs, payload))
                     {
                         log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)] + "——3 秒后自动退出");
@@ -316,6 +318,7 @@ namespace ChsiClient
             var txt = Adb("-s " + dev + " shell cat /proc/net/unix");
             foreach (var line in txt.Split('\n'))
             {
+                if (line.Contains("remote")) Dlog("unix: " + line.Trim());
                 var m = System.Text.RegularExpressions.Regex.Match(line, @"\S*devtools_remote\S*\s*$");
                 if (m.Success) out0.Add(m.Groups[1].Value.TrimStart('@'));
             }
@@ -339,7 +342,7 @@ namespace ChsiClient
                 var text = Encoding.UTF8.GetString(rbuf, 0, res.Count);
                 return !text.Contains("\"error\"");
             }
-            catch { return false; }
+            catch (Exception ex) { Dlog("cdp exc: " + ex.Message); return false; }
         }
 
         [STAThread]
