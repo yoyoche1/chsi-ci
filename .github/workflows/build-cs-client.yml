@@ -1,0 +1,37 @@
+name: build-cs-client
+on:
+  push:
+    paths: ['cs-client/**', '.github/workflows/build-cs-client.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish single-file exe
+        run: dotnet publish cs-client/ChsiClient.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionOnSingleFile=true -o out
+      - name: Bundle adb + zip (UTF-8 names)
+        run: |
+          Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile pt.zip
+          Expand-Archive -Path pt.zip -DestinationPath pt
+          New-Item -ItemType Directory -Force -Path stage, stage\adb | Out-Null
+          Copy-Item pt\platform-tools\adb.exe stage\adb\
+          Copy-Item pt\platform-tools\AdbWinApi.dll stage\adb\
+          Copy-Item pt\platform-tools\AdbWinUsbApi.dll stage\adb\
+          Copy-Item out\高校认证.exe stage\
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path .\stage).Path, (Join-Path (Get-Location) 'chsi-cs-client.zip'))
+      - name: Smoke test
+        run: |
+          $p = Start-Process -FilePath .\out\高校认证.exe -PassThru
+          Start-Sleep -Seconds 6
+          if ($p.HasExited) { Write-Host "EXITED code=$($p.ExitCode)"; exit 1 }
+          Write-Host "ALIVE ✓"
+          Stop-Process -Id $p.Id -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chsi-cs-client
+          path: chsi-cs-client.zip
