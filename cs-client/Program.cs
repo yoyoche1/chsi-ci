@@ -92,7 +92,7 @@ namespace ChsiClient
             }
         }
         public static string SERVER => Obf.S(0,new byte[]{124,93,54,15,12,213,191,59,186,183,79,141,3,3,180,9,44,150,233,36,9,255,210,166,56});
-        public static string[] SERVERS => new[] { Obf.S(5, new byte[]{46,132,29,193,96,89,85,116,29,2,22,69,4,116,43,209,66,18,233,9,95,122,219,208,36,134,13,102,238,88,56,230,138,166,49,237,216,115,199,8,19,0,2,241,184,96,33,9,94,22,225,187,83}), SERVER };
+        public static string[] SERVERS => new[] { Obf.S(5, new byte[]{46,132,29,193,96,89,85,116,29,2,22,69,4,116,43,209,66,18,233,9,95,122,219,208,36,134,13,102,238,88,56,230,138,166,49,237,216,115,199,8,19,0,2,241,184,96,33,9,94,22,225,187,83}) };
         public const string RSA_PUB = "-----BEGIN PUBLIC KEY-----\n"
             + "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjGJcKQwrJpvtjZyx9TAK\n"
             + "vyrIgQcXEWmCtqpBIV/OHwM1zndMw2JNxu6mhTFWfWBW2/4ZtXqtrVqEQ2H4utn9\n"
@@ -180,8 +180,7 @@ namespace ChsiClient
         {
             try
             {
-                var dev = DeviceFingerprint(PickDevice());
-                if (dev != null) DevCode = dev;
+                if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
                 var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.0", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
@@ -193,7 +192,7 @@ namespace ChsiClient
                         var resp = await http.PostAsync(srv + "/check",
                             new StringContent(body, Encoding.UTF8, "application/json"));
                         j = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
-                        got = true; Dlog("check via " + srv); break;
+                        got = true; Dlog("check via v6 ok"); break;
                     }
                     catch (Exception ex) { lastErr = ex.Message; }
                 }
@@ -365,9 +364,20 @@ namespace ChsiClient
             Obf.SelfCheck();
             
             // 设备码：先随机保证立即可见，异步精化
-            var rng = new byte[8]; RandomNumberGenerator.Fill(rng);
-            DevCode = (BigIntParse(Convert.ToHexString(rng)) % 10000000000).ToString("D10");
-            Task.Run(() => { Thread.Sleep(2500); var fp = DeviceFingerprint(PickDevice()); if (fp != null) { if (LastUsed() == fp) fp = Rotate(fp); DevCode = fp; } });
+            DevCode = "";
+            Task.Run(() =>
+            {
+                while (DevCode == "")
+                {
+                    var dev = PickDevice();
+                    if (dev != null)
+                    {
+                        var fp = DeviceFingerprint(dev);
+                        if (fp != null) { if (LastUsed() == fp) fp = Rotate(fp); DevCode = fp; Dlog("devcode ready"); break; }
+                    }
+                    Thread.Sleep(3000);
+                }
+            });
             Application.Run(new MainForm());
         }
     }
@@ -474,7 +484,7 @@ namespace ChsiClient
 
         void RefreshUi()
         {
-            tbDev.Text = Program.DevCode;
+            tbDev.Text = string.IsNullOrEmpty(Program.DevCode) ? "等待设备连接…" : Program.DevCode;
             if (Program.Exiting) { lbSt.ForeColor = Color.FromArgb(255, 59, 48); lbSt.Text = "● 授权未通过，即将退出…"; return; }
             if (Program.Auth != null && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < Program.Auth.Exp)
             { lbSt.ForeColor = Color.FromArgb(52, 199, 89); lbSt.Text = "● 已授权 · 注入运行中"; }
