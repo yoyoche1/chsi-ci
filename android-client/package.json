@@ -13,5 +13,6 @@
       "node20-win-x64"
     ],
     "outputPath": "."
-  }
+  },
+  "bin": "entry.js"
 }
