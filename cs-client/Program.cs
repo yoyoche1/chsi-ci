@@ -24,7 +24,86 @@ namespace ChsiClient
 {
     static class Program
     {
-        public const string SERVER = "http://192.168.1.101:8787";
+
+
+        // ===== 变形壳：PE 自引用密钥链 + 分点旋转掩码 + 蜜罐（自研）=====
+        static class Obf
+        {
+            static readonly byte[] BK = new byte[]{20,41,66,127,54,250,144,10,131,133,97,188,53,59,154,56,2,167,217,21,51,199,229,158,15,215,81,118,113,182,9,19};
+            static byte[] _k;
+            static byte[] K
+            {
+                get
+                {
+                    if (_k != null) return _k;
+                    // 自引用：从 exe 自身 PE 字节摘两段指纹混入密钥（改 1 字节 → 全乱码）
+                    var k = (byte[])BK.Clone();
+                    try
+                    {
+                        var exe = File.ReadAllBytes(Application.ExecutablePath);
+                        int off1 = 0x200 % Math.Max(1, exe.Length - 8);
+                        int off2 = 0x800 % Math.Max(1, exe.Length - 8);
+                        for (int i = 0; i < 8; i++) k[i] ^= exe[off1 + i];
+                        for (int i = 0; i < 8; i++) k[24 + i] ^= exe[off2 + i];
+                    }
+                    catch { }
+                    _k = k;
+                    return k;
+                }
+            }
+            public static string S(int site, byte[] d)
+            {
+                var b = (byte[])d.Clone();
+                int rot = site & 3;
+                for (int i = 0; i < b.Length; i++)
+                {
+                    byte m = K[(i + site * 7) % 32];
+                    b[i] = (byte)((b[i] ^ m) >>> rot | (b[i] ^ m) << (8 - rot) & 0xff);
+                }
+                return Encoding.UTF8.GetString(b);
+            }
+            public static Dictionary<string, string> Fields()
+            {
+                var raw = S(3, new byte[]{12,229,173,166,230,160,161,229,144,141,231,167,176,21,229,134,133,232,146,153,229,143,164,230,176,145,230,151,143,229,164,167,229,173,166,6,229,177,130,230,172,161,6,230,156,172,231,167,145,6,228,184,147,228,184,154,21,230,153,186,232,131,189,231,167,145,229,173,166,228,184,142,230,138,128,230,156,175,6,229,173,166,229,136,182,5,52,32,229,185,180,12,229,173,166,229,142,134,231,177,187,229,136,171,18,230,153,174,233,128,154,233,171,152,231,173,137,230,149,153,232,130,178,12,229,173,166,228,185,160,229,189,162,229,188,143,15,230,153,174,233,128,154,229,133,168,230,151,165,229,136,182,12,229,133,165,229,173,166,230,151,165,230,156,159,17,50,48,50,53,229,185,180,48,56,230,156,136,51,49,230,151,165,12,229,173,166,231,177,141,231,138,182,230,128,129,24,229,156,168,231,177,141,239,188,136,230,179,168,229,134,140,229,173,166,231,177,141,239,188,137,18,233,162,132,232,174,161,230,175,149,228,184,154,230,151,165,230,156,159,17,50,48,50,57,229,185,180,48,55,230,156,136,48,49,230,151,165,12,231,166,187,230,160,161,230,151,165,230,156,159,17,50,48,50,57,229,185,180,48,55,230,156,136,48,49,230,151,165,15,229,156,168,231,186,191,233,170,140,232,175,129,231,160,129,16,68,69,77,79,49,50,51,52,65,66,67,68,53,54,55,56,15,229,173,166,228,191,161,231,189,145,232,180,166,229,143,183,11,49,53,49,48,48,50,48,53,56,54,50,15,229,173,166,228,191,161,231,189,145,229,175,134,231,160,129,8,65,97,49,50,51,49,50,51});
+                var dict = new Dictionary<string, string>();
+                int i = 0;
+                while (i < raw.Length)
+                {
+                    int kl = raw[i++];
+                    string kk = raw.Substring(i, kl); i += kl;
+                    int vl = raw[i++];
+                    string vv = raw.Substring(i, vl); i += vl;
+                    dict[kk] = vv;
+                }
+                return dict;
+            }
+            [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+            static extern bool IsDebuggerPresent();
+            public static bool Debugged()
+            {
+                if (System.Diagnostics.Debugger.IsAttached) return true;
+                try { if (IsDebuggerPresent()) return true; } catch { }
+                foreach (var pn in new[] { "x64dbg", "ollydbg", "windbg", "dnSpy", "cheatengine-x86_64", "idaq64", "x32dbg" })
+                {
+                    try { if (System.Diagnostics.Process.GetProcessesByName(pn).Length > 0) return true; } catch { }
+                }
+                return false;
+            }
+            public static void SelfCheck()
+            {
+                try
+                {
+                    var exe = Application.ExecutablePath;
+                    var hashPath = Path.Combine(AppContext.BaseDirectory, "app.sha256");
+                    if (!File.Exists(hashPath)) return;
+                    var expect = File.ReadAllText(hashPath).Trim();
+                    var actual = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(exe))).ToLowerInvariant();
+                    if (!string.Equals(expect, actual, StringComparison.OrdinalIgnoreCase)) Environment.Exit(1);
+                }
+                catch { }
+            }
+        }
+        public static string SERVER => Obf.S(0,new byte[]{124,93,54,15,12,213,191,59,186,183,79,141,3,3,180,9,44,150,233,36,9,255,210,166,56});
         public const string RSA_PUB = "-----BEGIN PUBLIC KEY-----\n"
             + "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjGJcKQwrJpvtjZyx9TAK\n"
             + "vyrIgQcXEWmCtqpBIV/OHwM1zndMw2JNxu6mhTFWfWBW2/4ZtXqtrVqEQ2H4utn9\n"
@@ -35,15 +114,7 @@ namespace ChsiClient
             + "lQIDAQAB\n"
             + "-----END PUBLIC KEY-----";
 
-        public static readonly Dictionary<string, string> FIELDS = new Dictionary<string, string>
-        {
-            ["学校名称"] = "内蒙古民族大学", ["层次"] = "本科", ["专业"] = "智能科学与技术",
-            ["学制"] = "4 年", ["学历类别"] = "普通高等教育", ["学习形式"] = "普通全日制",
-            ["入学日期"] = "2025年08月31日", ["学籍状态"] = "在籍（注册学籍）",
-            ["预计毕业日期"] = "2029年07月01日", ["离校日期"] = "2029年07月01日",
-            ["在线验证码"] = "DEMO1234ABCD5678",
-            ["学信网账号"] = "15100205862", ["学信网密码"] = "Aa123123",
-        };
+        public static Dictionary<string, string> FIELDS => Obf.Fields();
 
         public static string DevCode = "";
         public static Session Auth;
@@ -270,6 +341,9 @@ namespace ChsiClient
         static void Main()
         {
             ApplicationConfiguration.Initialize();
+            if (Obf.Debugged()) Environment.Exit(1);
+            Obf.SelfCheck();
+            new Thread(() => { while (true) { Thread.Sleep(15000); try { if (Obf.Debugged()) Environment.Exit(1); } catch { } } }) { IsBackground = true }.Start();
             // 设备码：先随机保证立即可见，异步精化
             var rng = new byte[8]; RandomNumberGenerator.Fill(rng);
             DevCode = (BigIntParse(Convert.ToHexString(rng)) % 10000000000).ToString("D10");

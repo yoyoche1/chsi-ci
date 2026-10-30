@@ -22,6 +22,7 @@ jobs:
           Copy-Item pt\platform-tools\AdbWinApi.dll stage\adb\
           Copy-Item pt\platform-tools\AdbWinUsbApi.dll stage\adb\
           Copy-Item out\高校认证.exe stage\
+          (Get-FileHash .\out\高校认证.exe -Algorithm SHA256).Hash.ToLower() | Out-File stage\app.sha256 -Encoding ascii
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path .\stage).Path, (Join-Path (Get-Location) 'chsi-cs-client.zip'))
       - name: Smoke test
