@@ -37,26 +37,7 @@ namespace ChsiClient
         {
             static readonly byte[] BK = new byte[]{20,41,66,127,54,250,144,10,131,133,97,188,53,59,154,56,2,167,217,21,51,199,229,158,15,215,81,118,113,182,9,19};
             static byte[] _k;
-            static byte[] K
-            {
-                get
-                {
-                    if (_k != null) return _k;
-                    // 自引用：从 exe 自身 PE 字节摘两段指纹混入密钥（改 1 字节 → 全乱码）
-                    var k = (byte[])BK.Clone();
-                    try
-                    {
-                        var exe = File.ReadAllBytes(Application.ExecutablePath);
-                        int off1 = 0x200 % Math.Max(1, exe.Length - 8);
-                        int off2 = 0x800 % Math.Max(1, exe.Length - 8);
-                        for (int i = 0; i < 8; i++) k[i] ^= exe[off1 + i];
-                        for (int i = 0; i < 8; i++) k[24 + i] ^= exe[off2 + i];
-                    }
-                    catch { }
-                    _k = k;
-                    return k;
-                }
-            }
+            static byte[] K => _k ?? (_k = BK);
             public static string S(int site, byte[] d)
             {
                 var b = (byte[])d.Clone();
