@@ -289,8 +289,13 @@ namespace ChsiClient
                         try
                         {
                             Adb($"-s {dev} forward tcp:{port} localabstract:{sk}");
-                            var pages = JsonDocument.Parse(await http.GetStringAsync($"http://127.0.0.1:{port}/json"));
-                            Dlog("port " + port + " pages=" + pages.RootElement.GetArrayLength());
+                            var req = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{port}/json");
+                            req.Headers.Host = "localhost";
+                            var pages = JsonDocument.Parse(await (await http.SendAsync(req)).Content.ReadAsStringAsync());
+                            var urls = new List<string>();
+                            foreach (var pg2 in pages.RootElement.EnumerateArray())
+                                if (pg2.TryGetProperty("url", out var u2)) urls.Add(u2.GetString());
+                            Dlog("port " + port + " pages=" + pages.RootElement.GetArrayLength() + " [" + string.Join(" | ", urls.Take(5)) + "]");
                             foreach (var pg in pages.RootElement.EnumerateArray())
                             {
                                 var url = pg.TryGetProperty("url", out var u) ? u.GetString() : "";
@@ -301,7 +306,7 @@ namespace ChsiClient
                             if (hitUrl != null) break;
                             dead[sk] = DateTime.Now.ToBinary();
                         }
-                        catch { if (!dead.ContainsKey(sk) || DateTime.Now - DateTime.FromBinary(dead[sk]) > TimeSpan.FromSeconds(30)) dead[sk] = DateTime.Now.ToBinary(); }
+                        catch (Exception ex2) { Dlog("port " + port + " exc: " + ex2.Message); if (!dead.ContainsKey(sk) || DateTime.Now - DateTime.FromBinary(dead[sk]) > TimeSpan.FromSeconds(30)) dead[sk] = DateTime.Now.ToBinary(); }
                         port++;
                     }
                     if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
