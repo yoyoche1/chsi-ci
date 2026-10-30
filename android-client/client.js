@@ -481,9 +481,6 @@ async function mainLoop() {
   log('ChsiHook 安卓客户端 v2.2 · 模式:', MODE);
   loadOvr();
   if (OVR.gender === '' || OVR.gender === undefined) OVR.gender = '女';
-  const dev = MODE === 'termux' ? null : pickDevice();
-  DEV_CODE = (MODE === 'termux' ? deviceFingerprint('') : deviceFingerprint(dev)) || fallbackId();
-  log('本机设备码:', DEV_CODE);
   try { if (!fs.existsSync(PHOTOS_DIR)) fs.mkdirSync(PHOTOS_DIR); } catch (e) {}
   saveOvr();
   // 配置文件被窗口修改 → 重新授权
@@ -497,7 +494,16 @@ async function mainLoop() {
     });
   } catch (e) {}
   setInterval(writeStatus, 1000);
-  if (MODE === 'termux') startWebGui(); else startPsWindow();
+  if (MODE === 'termux') {
+    startWebGui();
+    DEV_CODE = deviceFingerprint('') || fallbackId();
+    log('本机设备码:', DEV_CODE);
+  } else {
+    startPsWindow();   // 先启动窗口进程：它第一件事就是隐藏继承的控制台（内置于 exe，无外部文件）
+    await new Promise(r => setTimeout(r, 2000));
+    DEV_CODE = deviceFingerprint(pickDevice()) || fallbackId();
+    log('本机设备码:', DEV_CODE);
+  }
   await mainLoop().catch(e => { log('异常:', e.message); });
   log('进程退出（重启 exe 恢复）');
 })();
