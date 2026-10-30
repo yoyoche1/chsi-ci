@@ -276,112 +276,27 @@ function startWebGui() {
   }).listen(GUI_PORT, '0.0.0.0', () => slog('Termux 设置界面: http://127.0.0.1:' + GUI_PORT));
 }
 
-// ---------- PC 原生窗口（PowerShell WinForms）----------
-const PS1_SRC = [
-  "$ErrorActionPreference = 'Stop'",
-  "Add-Type -AssemblyName System.Windows.Forms",
-  "Add-Type -AssemblyName System.Drawing",
-  "[Windows.Forms.Application]::EnableVisualStyles()",
-  "$base = Split-Path -Parent $MyInvocation.MyCommand.Path",
-  "$cfgPath = Join-Path $base 'config.json'",
-  "$statusPath = Join-Path $base 'status.json'",
-  "$photosPath = Join-Path $base 'photos'",
-  "if (-not (Test-Path $photosPath)) { New-Item -ItemType Directory -Path $photosPath | Out-Null }",
-  "$form = New-Object Windows.Forms.Form",
-  "$form.Text = 'ChsiHook 安卓客户端'",
-  "$form.Size = New-Object Drawing.Size(440, 430)",
-  "$form.StartPosition = 'CenterScreen'",
-  "$form.FormBorderStyle = 'FixedSingle'",
-  "$form.MaximizeBox = $false",
-  "$form.TopMost = $true",
-  "function Add-Ctl($c, $x, $y) { $c.Location = New-Object Drawing.Point($x, $y); $form.Controls.Add($c); return $c }",
-  "$t1 = Add-Ctl (New-Object Windows.Forms.Label) 20 15; $t1.Text = 'ChsiHook 安卓客户端'; $t1.AutoSize = $true; $t1.Font = New-Object Drawing.Font('微软雅黑', 11, [Drawing.FontStyle]::Bold); $t1.ForeColor = [Drawing.Color]::FromArgb(88,166,255)",
-  "$t2 = Add-Ctl (New-Object Windows.Forms.Label) 20 50; $t2.Text = '设备码（发给管理员换授权码）'; $t2.AutoSize = $true; $t2.ForeColor = [Drawing.Color]::FromArgb(139,148,158)",
-  "$lbDev = Add-Ctl (New-Object Windows.Forms.Label) 20 70; $lbDev.Text = '…'; $lbDev.AutoSize = $true; $lbDev.Font = New-Object Drawing.Font('Consolas', 14, [Drawing.FontStyle]::Bold); $lbDev.ForeColor = [Drawing.Color]::FromArgb(240,136,62)",
-  "$t3 = Add-Ctl (New-Object Windows.Forms.Label) 20 105; $t3.Text = '授权码'; $t3.AutoSize = $true",
-  "$tbCode = Add-Ctl (New-Object Windows.Forms.TextBox) 20 125; $tbCode.Width = 380",
-  "$t4 = Add-Ctl (New-Object Windows.Forms.Label) 20 160; $t4.Text = '姓名（留空 = 不改写）'; $t4.AutoSize = $true",
-  "$tbName = Add-Ctl (New-Object Windows.Forms.TextBox) 20 180; $tbName.Width = 380",
-  "$t5 = Add-Ctl (New-Object Windows.Forms.Label) 20 215; $t5.Text = '性别'; $t5.AutoSize = $true",
-  "$cbGender = Add-Ctl (New-Object Windows.Forms.ComboBox) 20 235; $cbGender.Width = 140; $cbGender.DropDownStyle = 'DropDownList'",
-  "[void]$cbGender.Items.Add('不改写'); [void]$cbGender.Items.Add('男'); [void]$cbGender.Items.Add('女')",
-  "$t6 = Add-Ctl (New-Object Windows.Forms.Label) 20 270; $t6.Text = '照片'; $t6.AutoSize = $true",
-  "$cbPhoto = Add-Ctl (New-Object Windows.Forms.ComboBox) 20 290; $cbPhoto.Width = 280; $cbPhoto.DropDownStyle = 'DropDownList'",
-  "[void]$cbPhoto.Items.Add('不换照片')",
-  "$btnBrowse = Add-Ctl (New-Object Windows.Forms.Button) 310 288; $btnBrowse.Text = '浏览…'; $btnBrowse.Width = 90",
-  "$btnSave = Add-Ctl (New-Object Windows.Forms.Button) 20 330; $btnSave.Text = '保存并应用'; $btnSave.Width = 380; $btnSave.Height = 38",
-  "$lbSt = Add-Ctl (New-Object Windows.Forms.Label) 20 378; $lbSt.Text = '启动中…'; $lbSt.AutoSize = $true; $lbSt.ForeColor = [Drawing.Color]::FromArgb(63,185,80)",
-  "function LoadSettings() {",
-  "  try {",
-  "    $raw = [IO.File]::ReadAllText($cfgPath)",
-  "    if ($raw[0] -eq [char]0xFEFF) { $raw = $raw.TrimStart([char]0xFEFF) }",
-  "    $o = ConvertFrom-Json $raw",
-  "    $tbCode.Text = [string]$o.code; $tbName.Text = [string]$o.name",
-  "    $g = [string]$o.gender; if ($g -eq '') { $g = '女' }",
-  "    $cbGender.Text = $g",
-  "    $p = [string]$o.photo; if ($p -eq '') { $p = '不换照片' }",
-  "    if ($cbPhoto.Items -contains $p) { $cbPhoto.Text = $p } else { $cbPhoto.Text = '不换照片' }",
-  "  } catch {}",
-  "}",
-  "LoadSettings",
-  "$btnBrowse.Add_Click({",
-  "  $dlg = New-Object Windows.Forms.OpenFileDialog",
-  "  $dlg.Filter = '图片|*.jpg;*.jpeg;*.png'",
-  "  if ($dlg.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) {",
-  "    $dest = Join-Path $photosPath (Split-Path -Leaf $dlg.FileName)",
-  "    Copy-Item -Force $dlg.FileName $dest",
-  "    if ($cbPhoto.Items -notcontains (Split-Path -Leaf $dlg.FileName)) { [void]$cbPhoto.Items.Add((Split-Path -Leaf $dlg.FileName)) }",
-  "    $cbPhoto.Text = Split-Path -Leaf $dlg.FileName",
-  "  }",
-  "})",
-  "$btnSave.Add_Click({",
-  "  try {",
-  "    $o = @{ code = $tbCode.Text.Trim(); name = $tbName.Text.Trim(); gender = $cbGender.Text; photo = $cbPhoto.Text }",
-  "    if ($o.code -ne '' -and $o.code -notmatch '^CHSI-') { throw '授权码格式应为 CHSI-XXXX-XXXX-XXXX' }",
-  "    $tmp = $cfgPath + '.tmp'",
-  "    (ConvertTo-Json $o) | Set-Content -Path $tmp -Encoding UTF8",
-  "    Move-Item -Force $tmp $cfgPath",
-  "    $lbSt.Text = '已保存，应用中…'",
-  "  } catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message, '错误') | Out-Null }",
-  "})",
-  "$tm = New-Object Windows.Forms.Timer",
-  "$tm.Interval = 800",
-  "$tm.Add_Tick({",
-  "  try {",
-  "    if (Test-Path $statusPath) {",
-  "      $st = ConvertFrom-Json ([IO.File]::ReadAllText($statusPath))",
-  "      if ($st.devCode) { $lbDev.Text = [string]$st.devCode }",
-  "      if ($st.authed) { $lbSt.Text = '✓ 已授权 · 注入运行中'; $lbSt.ForeColor = [Drawing.Color]::FromArgb(63,185,80) }",
-  "      else { $lbSt.Text = '未授权 / 等待设备'; $lbSt.ForeColor = [Drawing.Color]::FromArgb(248,81,73) }",
-  "    }",
-  "  } catch {}",
-  "})",
-  "$tm.Start()",
-  "[Windows.Forms.Application]::Run($form)",
-].join('\r\n');
-
-function startWebGuiAndOpen() {
-  startWebGui();
-  try { execSync('start "" "http://127.0.0.1:' + GUI_PORT + '"', { shell: 'cmd.exe', timeout: 5000, stdio: 'ignore' }); } catch (e) {}
-}
-function startPsWindow() {
-  const p1 = path.join(WRITABLE, 'ui.ps1');
-  try { fs.writeFileSync(p1, '\ufeff' + PS1_SRC, 'utf8'); } catch (e) { slog('ui.ps1 写入失败:', e.message); startWebGuiAndOpen(); return; }
-  try {
-    const errFd = fs.openSync(path.join(WRITABLE, 'ui-error.log'), 'a');
-    const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, windowsHide: true, stdio: ['ignore', 'ignore', errFd] });
-    slog('设置窗口进程已启动 (pid=' + ps.pid + ')，窗口未出现请看 ui-error.log');
-    setTimeout(() => {
-      try {
-        if (ps.exitCode !== null || ps.signalCode) {
-          slog('⚠ 窗口进程提前退出(code=' + ps.exitCode + ',signal=' + ps.signalCode + ')——改用网页界面，详情见 ui-error.log');
-          startWebGuiAndOpen();
-        } else {
-          slog('窗口进程运行中 ✓');
-        }
-      } catch (e) {}
-    }, 6000);
-  } catch (e) { slog('窗口启动失败:', e.message); startWebGuiAndOpen(); }
+// ---------- PC 设置窗口（Chrome/Edge 应用窗口，无浏览器界面）----------
+function openAppWindow() {
+  const url = 'http://127.0.0.1:' + GUI_PORT;
+  const cands = [
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    process.env.LOCALAPPDATA + '/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+  ];
+  for (const c of cands) {
+    try {
+      if (fs.existsSync(c)) {
+        spawn(c, ['--app=' + url, '--window-size=470,680'], { detached: true, stdio: 'ignore' }).unref();
+        slog('设置窗口已打开（应用窗口）');
+        return;
+      }
+    } catch (e) {}
+  }
+  try { execSync('start "" "' + url + '"', { shell: 'cmd.exe', timeout: 5000, stdio: 'ignore' }); slog('已用默认浏览器打开设置页'); }
+  catch (e) { slog('无法自动打开浏览器，手动访问 ' + url); }
 }
 
 // ---------- CDP ----------
@@ -497,7 +412,8 @@ async function mainLoop() {
     });
   } catch (e) {}
   setInterval(writeStatus, 1000);
-  if (MODE === 'termux') startWebGui(); else startPsWindow();
+  startWebGui();
+  if (MODE !== 'termux') openAppWindow();
   await mainLoop().catch(e => { log('异常:', e.message); });
   log('进程退出（重启 exe 恢复）');
 })();
