@@ -478,16 +478,17 @@ async function mainLoop() {
       }
 
       let hit = null;
+      adb(`-s ${devArg} forward --remove-all`);   // 清理本设备全部旧转发（都是本客户端建的），避免端口粘滞
+      let scanPort = 19300;
       for (const sk of socks) {
         try {
-          adb(`-s ${devArg} forward tcp:9333 localabstract:${sk}`);
-          const pages = await listPages(9333);
+          adb(`-s ${devArg} forward tcp:${scanPort} localabstract:${sk}`);
+          const pages = await listPages(scanPort);
           const p = pages.find(t => t.url && (t.url.includes('chsi.com.cn') || t.url.includes('qianbao.qq.com')) && t.webSocketDebuggerUrl);
           if (p) { hit = p; socketName = sk; deadSockets.delete(sk); break; }
-          deadSockets.set(sk, 0);   // 响应了但没目标页面：本会话跳过（0 = 永久）
-        } catch (e) {
-          if (!deadSockets.has(sk) || deadSockets.get(sk) !== 0) deadSockets.set(sk, Date.now());   // 超时：30s 冷却后重试
-        }
+          deadSockets.set(sk, Date.now());   // 30s 冷却后重试
+        } catch (e) { if (!deadSockets.has(sk) || Date.now() - deadSockets.get(sk) > 30000) deadSockets.set(sk, Date.now()); }
+        scanPort++;
       }
       if (!hit) { slog('等待学信网页面（在 QQ 里打开后自动检测）…'); await new Promise(r => setTimeout(r, 4000)); continue; }
 
