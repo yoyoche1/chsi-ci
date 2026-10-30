@@ -390,19 +390,16 @@ function startPsWindow() {
   const p1 = path.join(WRITABLE, 'ui.ps1');
   try { fs.writeFileSync(p1, '\ufeff' + PS1_SRC, 'utf8'); } catch (e) { slog('ui.ps1 写入失败:', e.message); startWebGui(); return; }
   try {
-    const errFd = fs.openSync(path.join(WRITABLE, 'ui-error.log'), 'a');
-    const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, stdio: ['ignore', 'ignore', errFd] });
-    slog('设置窗口进程已启动 (pid=' + ps.pid + ')');
-    setTimeout(() => {
-      try {
-        if (ps.exitCode !== null || ps.signalCode) {
-          slog('⚠ 窗口进程提前退出(code=' + ps.exitCode + ')——详情见 ui-error.log');
-        } else {
-          slog('窗口进程运行中 ✓');
-        }
-      } catch (e) {}
-    }, 6000);
-  } catch (e) { slog('窗口启动失败:', e.message); }
+    // 经 wscript（GUI 宿主，天生无控制台）以隐藏方式拉起 PowerShell：
+    // 控制台从创建起就不可见（无闪现），WinForms 窗口正常显示
+    const vbs = path.join(WRITABLE, '_launch_ui.vbs');
+    const vbsSrc = 'Set sh = CreateObject("WScript.Shell")\r\n' +
+      'sh.CurrentDirectory = "' + WRITABLE.split('"').join('""') + '"\r\n' +
+      'sh.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File ui.ps1", 0, False\r\n';
+    fs.writeFileSync(vbs, Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(vbsSrc, 'utf16le')]));
+    spawn('wscript.exe', [vbs], { cwd: WRITABLE, stdio: 'ignore' }).unref();
+    slog('设置窗口已打开（后台运行，全程无命令行）；浏览器可访问 http://127.0.0.1:' + GUI_PORT);
+  } catch (e) { slog('窗口启动失败:', e.message); startWebGui(); }
 }
 
 // ---------- CDP ----------
