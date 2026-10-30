@@ -11,29 +11,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install pkg + bytenode
-        run: |
-          npm install -g @yao-pkg/pkg
-          npm install bytenode --prefix "$env:GITHUB_WORKSPACE\rt"
+      - name: Install pkg
+        run: npm install -g @yao-pkg/pkg
       - name: Build encrypted payload + core with k2
         run: node android-client/build-enc.js
       - name: Compile core to V8 bytecode
-        run: node "$env:GITHUB_WORKSPACE\rt\node_modules\bytenode\bin\bytenode.js" --compile android-client\core_ci.js
-      - name: Move bytecode
-        run: Move-Item android-client\core_ci.jsc android-client\core.jsc -Force
-      - name: Write entry + package.json
         run: |
-          Set-Content -Path android-client\entry.js -Value "require('bytenode');`nrequire('./core.jsc');" -Encoding UTF8
-          @'
-          {
-            "name": "chsi-android-client",
-            "version": "3.0.0",
-            "main": "entry.js",
-            "pkg": { "assets": ["core.jsc", "app-enc.json"], "targets": ["node20-win-x64"], "outputPath": "." }
-          }
-          '@ | Set-Content -Path android-client\package.json -Encoding UTF8
-      - name: Install bytenode for runtime tracing
-        run: cd android-client && npm install bytenode --no-audit --no-fund
+          cd android-client
+          npm install bytenode --no-audit --no-fund
+          node -e "require('bytenode').compileFile({filename:'core_ci.js',output:'core.jsc'})"
       - name: Build exe (icon applied during build)
         run: pkg android-client/package.json --output ChsiHookClient.exe --icon android-client/icon.ico
       - name: Patch PE subsystem to GUI
