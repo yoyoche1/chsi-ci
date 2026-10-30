@@ -30,7 +30,7 @@ namespace ChsiClient
 
         public static void Dlog(string m)
         {
-            try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "log.txt"), DateTime.Now.ToString("HH:mm:ss") + " " + m + NL, Encoding.UTF8); } catch { }
+            try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "log.txt"), DateTime.Now.ToString("HH:mm:ss") + " " + m + Environment.NewLine, Encoding.UTF8); } catch { }
         }
 
         static class Obf
