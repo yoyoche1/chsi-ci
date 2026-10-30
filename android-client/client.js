@@ -369,8 +369,7 @@ function startPsWindow() {
   try { fs.writeFileSync(p1, '\ufeff' + PS1_SRC, 'utf8'); } catch (e) { slog('ui.ps1 写入失败:', e.message); startWebGuiAndOpen(); return; }
   try {
     const errFd = fs.openSync(path.join(WRITABLE, 'ui-error.log'), 'a');
-    const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, detached: true, stdio: ['ignore', 'ignore', errFd] });
-    ps.unref();
+    const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, windowsHide: true, stdio: ['ignore', 'ignore', errFd] });
     slog('设置窗口进程已启动 (pid=' + ps.pid + ')，窗口未出现请看 ui-error.log');
     setTimeout(() => {
       try {
