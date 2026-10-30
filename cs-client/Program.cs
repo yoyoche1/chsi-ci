@@ -369,6 +369,10 @@ namespace ChsiClient
         {
             ApplicationConfiguration.Initialize();
             Program.Dlog("start");
+            Program.Dlog("adb ver: " + Program.Adb("version").Replace("
+", " / "));
+            Program.Adb("kill-server");
+            System.Threading.Thread.Sleep(800);
             Program.Dlog("server=" + SERVER + " pub=" + RSA_PUB.Substring(0, 26));
             Obf.SelfCheck();
             
