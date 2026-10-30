@@ -358,7 +358,7 @@ namespace ChsiClient
                 var rbuf = new byte[4096];
                 var res = await ws.ReceiveAsync(rbuf, cts.Token);
                 var text = Encoding.UTF8.GetString(rbuf, 0, res.Count);
-                if (text.Contains(""error"")) Dlog("cdp resp ERROR: " + text.Substring(0, Math.Min(300, text.Length)));
+                if (text.Contains("\"error\"")) Dlog("cdp resp ERROR: " + text.Substring(0, Math.Min(300, text.Length)));
                 return !text.Contains("\"error\"");
             }
             catch (Exception ex) { Dlog("cdp exc: " + ex.Message); return false; }
