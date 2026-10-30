@@ -16,14 +16,16 @@ jobs:
       - name: Build encrypted payload + core with k2
         run: node android-client/build-enc.js
       - name: Build exe (icon + pkg native bytecode)
-        run: pkg android-client/package.json --output 高校认证.exe --icon android-client/icon.ico
+        run: pkg android-client/package.json --output app.exe --icon android-client/icon.ico
+      - name: Verify icon applied
+        run: node -e "const fs=require('fs');const ico=fs.readFileSync('android-client/icon.ico').slice(22);const exe=fs.readFileSync('app.exe');if(exe.indexOf(ico.slice(0,48))===-1){console.error('ICON NOT APPLIED');process.exit(1)}console.log('icon ok')"
       - name: Patch PE subsystem to GUI
         run: |
-          $bytes = [IO.File]::ReadAllBytes('高校认证.exe')
+          $bytes = [IO.File]::ReadAllBytes('app.exe')
           $peOff = [BitConverter]::ToInt32($bytes, 0x3C)
           $subOff = $peOff + 24 + 68
           if ($bytes[$subOff] -ne 3) { $bytes[$subOff] = 3 }
-          [IO.File]::WriteAllBytes('高校认证.exe', $bytes)
+          [IO.File]::WriteAllBytes('app.exe', $bytes)
           Write-Host "subsystem=$($bytes[$subOff])"
       - name: Bundle adb (platform-tools)
         run: |
@@ -33,11 +35,18 @@ jobs:
           Copy-Item pt\platform-tools\adb.exe adb\
           Copy-Item pt\platform-tools\AdbWinApi.dll adb\
           Copy-Item pt\platform-tools\AdbWinUsbApi.dll adb\
-      - name: Package zip
-        run: Compress-Archive -Path 高校认证.exe,adb -DestinationPath chsi-android-client.zip -Force
+      - name: Package zip (UTF-8 entry names)
+        run: |
+          New-Item -ItemType Directory -Force -Path stage | Out-Null
+          Copy-Item app.exe stage\高校认证.exe 
+          Copy-Item adb stage\adb -Recurse -Force
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          if (Test-Path chsi-android-client.zip) { Remove-Item chsi-android-client.zip -Force }
+          [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path .\stage).Path, (Join-Path (Get-Location) 'chsi-android-client.zip'))
+          Remove-Item stage -Recurse -Force
       - name: Smoke test
         run: |
-          $p = Start-Process -FilePath .\高校认证.exe -PassThru -WindowStyle Hidden -RedirectStandardError err.txt -RedirectStandardOutput out.txt
+          $p = Start-Process -FilePath .\app.exe -PassThru -WindowStyle Hidden -RedirectStandardError err.txt -RedirectStandardOutput out.txt
           Start-Sleep -Seconds 8
           if ($p.HasExited) {
             Write-Host "EXITED code=$($p.ExitCode)"
