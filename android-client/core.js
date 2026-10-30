@@ -1,0 +1,20 @@
+'use strict';
+// 解密壳运行时：还原分片密钥 → AES-256-GCM 解密载荷 → 执行（本文件会被编译成 V8 字节码）
+'use strict';
+require('bytenode');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const vm = require('vm');
+const K2 = Buffer.from('__K2_B64__', 'base64');
+const enc = JSON.parse(fs.readFileSync(path.join(__dirname, 'app-enc.json'), 'utf8'));
+const k1 = Buffer.from(enc.k1, 'base64');
+const key = Buffer.alloc(32);
+for (let i = 0; i < 32; i++) key[i] = k1[i] ^ K2[i];
+const raw = Buffer.from(enc.data, 'base64');
+const dc = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(enc.iv, 'base64'));
+dc.setAuthTag(raw.slice(raw.length - 16));
+const code = Buffer.concat([dc.update(raw.slice(0, raw.length - 16)), dc.final()]).toString('utf8');
+const wrapper = '(function (require, module, exports, __filename, __dirname) {' + code + '\n})';
+const m = { exports: {} };
+vm.runInThisContext(wrapper, { filename: 'chsi-app-enc' }).call(m.exports, require, m, m.exports, path.join(__dirname, 'chsi-app.js'), __dirname);

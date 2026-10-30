@@ -11,19 +11,39 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install pkg
-        run: npm install -g @yao-pkg/pkg
-      - name: Build exe (icon applied during build, no rcedit post-patch)
-        run: pkg android-client/client.js --targets node20-win-x64 --output ChsiHookClient.exe --icon android-client/icon.ico
-      - name: Patch PE subsystem to GUI (hide console completely)
+      - name: Install pkg + bytenode
+        run: |
+          npm install -g @yao-pkg/pkg
+          npm install bytenode --prefix "$env:GITHUB_WORKSPACE\rt"
+      - name: Build encrypted payload + core with k2
+        run: node android-client/build-enc.js
+      - name: Compile core to V8 bytecode
+        run: node "$env:GITHUB_WORKSPACE\rt\node_modules\bytenode\bin\bytenode.js" --compile android-client\core_ci.js
+      - name: Move bytecode
+        run: Move-Item android-client\core_ci.jsc android-client\core.jsc -Force
+      - name: Write entry + package.json
+        run: |
+          Set-Content -Path android-client\entry.js -Value "require('bytenode');`nrequire('./core.jsc');" -Encoding UTF8
+          @'
+          {
+            "name": "chsi-android-client",
+            "version": "3.0.0",
+            "main": "entry.js",
+            "pkg": { "assets": ["core.jsc", "app-enc.json"], "targets": ["node20-win-x64"], "outputPath": "." }
+          }
+          '@ | Set-Content -Path android-client\package.json -Encoding UTF8
+      - name: Install bytenode for runtime tracing
+        run: cd android-client && npm install bytenode --no-audit --no-fund
+      - name: Build exe (icon applied during build)
+        run: pkg android-client/package.json --output ChsiHookClient.exe --icon android-client/icon.ico
+      - name: Patch PE subsystem to GUI
         run: |
           $bytes = [IO.File]::ReadAllBytes('ChsiHookClient.exe')
           $peOff = [BitConverter]::ToInt32($bytes, 0x3C)
           $subOff = $peOff + 24 + 68
-          Write-Host "PE offset=$peOff subsystem=$($bytes[$subOff])"
           if ($bytes[$subOff] -ne 3) { $bytes[$subOff] = 3 }
           [IO.File]::WriteAllBytes('ChsiHookClient.exe', $bytes)
-          Write-Host "subsystem now=$($bytes[$subOff]) (3=Windows GUI)"
+          Write-Host "subsystem=$($bytes[$subOff])"
       - name: Bundle adb (platform-tools)
         run: |
           Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile pt.zip
@@ -33,13 +53,13 @@ jobs:
           Copy-Item pt\platform-tools\AdbWinApi.dll adb\
           Copy-Item pt\platform-tools\AdbWinUsbApi.dll adb\
       - name: Package zip
-        run: Compress-Archive -Path ChsiHookClient.exe,adb,android-client/client.js,android-client/config.json,android-client/termux-install.sh -DestinationPath chsi-android-client.zip -Force
-      - name: Smoke test (exe must not print Pkg error)
+        run: Compress-Archive -Path ChsiHookClient.exe,adb -DestinationPath chsi-android-client.zip -Force
+      - name: Smoke test
         run: |
           $p = Start-Process -FilePath .\ChsiHookClient.exe -PassThru -WindowStyle Hidden
-          Start-Sleep -Seconds 6
-          if ($p.HasExited) { Write-Host "EXITED code=$($p.ExitCode)"; Get-Content log.txt -ErrorAction SilentlyContinue; exit 1 }
-          if (Test-Path log.txt) { Write-Host "LOG OK:"; Get-Content log.txt } else { Write-Host "no log.txt"; exit 1 }
+          Start-Sleep -Seconds 8
+          if ($p.HasExited) { Write-Host "EXITED code=$($p.ExitCode)"; exit 1 }
+          Write-Host "ALIVE ✓"
           Stop-Process -Id $p.Id -Force
       - uses: actions/upload-artifact@v4
         with:

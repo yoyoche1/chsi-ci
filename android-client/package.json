@@ -1,0 +1,15 @@
+{
+  "name": "chsi-android-client",
+  "version": "3.0.0",
+  "main": "entry.js",
+  "pkg": {
+    "assets": [
+      "core.jsc",
+      "app-enc.json"
+    ],
+    "targets": [
+      "node20-win-x64"
+    ],
+    "outputPath": "."
+  }
+}
