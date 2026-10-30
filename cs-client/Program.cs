@@ -92,6 +92,7 @@ namespace ChsiClient
             }
         }
         public static string SERVER => Obf.S(0,new byte[]{124,93,54,15,12,213,191,59,186,183,79,141,3,3,180,9,44,150,233,36,9,255,210,166,56});
+        public static string[] SERVERS => new[] { Obf.S(5, new byte[]{46,132,29,193,96,89,85,116,29,2,22,69,4,116,43,209,66,18,233,9,95,122,219,208,36,134,13,102,238,88,56,230,138,166,49,237,216,115,199,8,19,0,2,241,184,96,33,9,94,22,225,187,83}), SERVER };
         public const string RSA_PUB = "-----BEGIN PUBLIC KEY-----\n"
             + "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjGJcKQwrJpvtjZyx9TAK\n"
             + "vyrIgQcXEWmCtqpBIV/OHwM1zndMw2JNxu6mhTFWfWBW2/4ZtXqtrVqEQ2H4utn9\n"
@@ -183,10 +184,20 @@ namespace ChsiClient
                 if (dev != null) DevCode = dev;
                 var nonce = Guid.NewGuid().ToString("N")[..16];
                 var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.0", nonce });
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-                var resp = await http.PostAsync(SERVER + "/check",
-                    new StringContent(body, Encoding.UTF8, "application/json"));
-                var j = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
+                JsonElement j = default; string lastErr = null; bool got = false;
+                foreach (var srv in SERVERS)
+                {
+                    try
+                    {
+                        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                        var resp = await http.PostAsync(srv + "/check",
+                            new StringContent(body, Encoding.UTF8, "application/json"));
+                        j = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
+                        got = true; Dlog("check via " + srv); break;
+                    }
+                    catch (Exception ex) { lastErr = ex.Message; }
+                }
+                if (!got) return (false, "网络/异常（IPv6+IPv4 均失败）：" + lastErr);
                 if (!j.GetProperty("ok").GetBoolean()) return (false, "服务器拒绝：" + (j.TryGetProperty("reason", out var rr) ? rr.GetString() : "unknown"));
                 var exp = j.GetProperty("exp").GetInt64();
                 if (exp < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) return (false, "授权已过期");
