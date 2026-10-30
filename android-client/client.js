@@ -162,7 +162,7 @@ function uiReady() {
   return true;
 }
 function photoFile() {
-  if (!OVR.photo || OVR.photo === '不换照片') return '';
+  if (!OVR.photo) return '';
   return listPhotos().includes(OVR.photo) ? OVR.photo : '';
 }
 function buildRulesJs() {
@@ -220,7 +220,7 @@ button{padding:8px 16px;background:#238636;color:#fff;border:0;border-radius:6px
 <div class="card"><label>授权码</label><input id="code" placeholder="CHSI-XXXX-XXXX-XXXX"><button onclick="save()">保存并应用</button></div>
 <div class="card"><label>姓名（留空 = 不改写）</label><input id="name" placeholder="例如：张三"></div>
 <div class="card"><label>性别</label><select id="gender"><option value="不改写">不改写</option><option value="男">男</option><option value="女">女</option></select></div>
-<div class="card"><label>照片</label><select id="photo"><option value="不换照片">不换照片</option></select>
+<div class="card"><label>照片</label><select id="photo"><option value="">请选择照片</option></select>
 <input type="file" id="pfile" accept="image/jpeg,image/png" style="margin-top:8px">
 <div class="hint" id="pHint">选择图片文件后保存（会复制到 photos 文件夹）</div></div>
 <button onclick="save()">保存并应用</button>
@@ -233,7 +233,7 @@ async function refresh(){const s=await (await fetch('/status')).json();
  document.getElementById('code').value=s.code||'';
  document.getElementById('name').value=s.name||'';
  document.getElementById('gender').value=s.gender||'不改写';
- const sel=document.getElementById('photo');sel.innerHTML='<option value="不换照片">不换照片</option>';
+ const sel=document.getElementById('photo');sel.innerHTML='<option value="">请选择照片</option>';
  (s.photos||[]).forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;if(p===s.photo)o.selected=true;sel.appendChild(o);});
  document.getElementById('logs').textContent=(s.logs||[]).join('\\n');}
 document.getElementById('pfile').addEventListener('change',function(){const f=this.files[0];if(!f)return;newPhoto=f.name;const rd=new FileReader();rd.onload=()=>{window._pd=rd.result;document.getElementById('pHint').textContent='已选择: '+f.name+'（点保存并应用）';};rd.readAsDataURL(f);});
@@ -252,7 +252,7 @@ function startWebGui() {
       res.end(PAGE);
     } else if (req.method === 'GET' && u === '/status') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ devCode: DEV_CODE || '', authed, code: OVR.code, name: OVR.name, gender: OVR.gender || '不改写', photo: OVR.photo || '不换照片', photos: listPhotos(), logs: stateLog.slice(-40) }));
+      res.end(JSON.stringify({ devCode: DEV_CODE || '', authed, code: OVR.code, name: OVR.name, gender: OVR.gender || '不改写', photo: OVR.photo || '', photos: listPhotos(), logs: stateLog.slice(-40) }));
     } else if (req.method === 'POST' && u === '/save') {
       let body = '';
       req.on('data', (c) => { body += c; if (body.length > 8e6) req.destroy(); });
@@ -318,7 +318,7 @@ const PS1_SRC = [
   "$rbF = Add-Ctl (New-Object Windows.Forms.RadioButton) 100 235; $rbF.Text = '女'; $rbF.Width = 70",
   "$t6 = Add-Ctl (New-Object Windows.Forms.Label) 20 270; $t6.Text = '照片'; $t6.AutoSize = $true",
   "$cbPhoto = Add-Ctl (New-Object Windows.Forms.ComboBox) 20 290; $cbPhoto.Width = 280; $cbPhoto.DropDownStyle = 'DropDownList'",
-  "[void]$cbPhoto.Items.Add('不换照片')",
+
   "$btnBrowse = Add-Ctl (New-Object Windows.Forms.Button) 310 288; $btnBrowse.Text = '浏览…'; $btnBrowse.Width = 90",
   "$btnSave = Add-Ctl (New-Object Windows.Forms.Button) 20 330; $btnSave.Text = '保存并应用'; $btnSave.Width = 380; $btnSave.Height = 38; $btnSave.Enabled = $false; $btnSave.BackColor = [Drawing.Color]::FromArgb(80,80,80)",
   "$lbSt = Add-Ctl (New-Object Windows.Forms.Label) 20 378; $lbSt.Text = '启动中…'; $lbSt.AutoSize = $true; $lbSt.ForeColor = [Drawing.Color]::FromArgb(63,185,80)",
@@ -329,14 +329,14 @@ const PS1_SRC = [
   "    $o = ConvertFrom-Json $raw",
   "    $tbCode.Text = [string]$o.code; $tbName.Text = [string]$o.name",
   "    $g = [string]$o.gender; if ($g -eq '男') { $rbM.Checked = $true } else { $rbF.Checked = $true }",
-  "    $p = [string]$o.photo; if ($p -eq '') { $p = '不换照片' }",
-  "    if ($cbPhoto.Items -contains $p) { $cbPhoto.Text = $p } else { $cbPhoto.Text = '不换照片' }",
+  "    $p = [string]$o.photo",
+  "    if ($p -ne '' -and $cbPhoto.Items -contains $p) { $cbPhoto.Text = $p }",
   "  } catch {}",
   "}",
   "LoadSettings",
   "function UpdateSaveState() {",
   "  $gok = $rbM.Checked -or $rbF.Checked",
-  "  $ok = ($tbCode.Text.Trim() -ne '') -and ($tbName.Text.Trim() -ne '') -and $gok -and ($cbPhoto.Text -ne '' -and $cbPhoto.Text -ne '不换照片')",
+  "  $ok = ($tbCode.Text.Trim() -ne '') -and ($tbName.Text.Trim() -ne '') -and $gok -and ($cbPhoto.Text -ne '')",
   "  $btnSave.Enabled = $ok",
   "  if ($ok) { $btnSave.BackColor = [Drawing.Color]::FromArgb(35,134,54) } else { $btnSave.BackColor = [Drawing.Color]::FromArgb(80,80,80) }",
   "}",
@@ -363,7 +363,7 @@ const PS1_SRC = [
   "    if ($o.code -ne '' -and $o.code -notmatch '^CHSI-') { throw '授权码格式应为 CHSI-XXXX-XXXX-XXXX' }",
   "    if ($o.name -eq '') { throw '姓名必须填写' }",
   "    if ($o.gender -ne '男' -and $o.gender -ne '女') { throw '性别必须选择男或女' }",
-  "    if ($o.photo -eq '' -or $o.photo -eq '不换照片') { throw '照片必须选择（点浏览选择图片）' }",
+  "    if ($o.photo -eq '') { throw '照片必须选择（点浏览选择图片）' }",
   "    $tmp = $cfgPath + '.tmp'",
   "    (ConvertTo-Json $o) | Set-Content -Path $tmp -Encoding UTF8",
   "    Move-Item -Force $tmp $cfgPath",
