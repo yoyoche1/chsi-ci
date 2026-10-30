@@ -286,9 +286,9 @@ function startWebGui() {
 const PS1_SRC = [
   "$ErrorActionPreference = 'Stop'",
   "try {",
-  "  Add-Type -Namespace Native -Name Win -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'",
-  "  $hwnd = (Get-Process -Id $PID).MainWindowHandle",
-  "  if ($hwnd -ne [IntPtr]::Zero) { [Native.Win]::ShowWindow($hwnd, 0) | Out-Null }",
+  "  Add-Type -Namespace Native -Name Win -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern IntPtr GetConsoleWindow(); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'",
+  "  $hwnd = [Native.Win]::GetConsoleWindow()",
+  "  if ($hwnd -ne [IntPtr]::Zero) { [Native.Win]::ShowWindow($hwnd, 0) | Out-Null; [Native.Win]::ShowWindow($hwnd, 0) | Out-Null }",
   "} catch {}",
   "Add-Type -AssemblyName System.Windows.Forms",
   "Add-Type -AssemblyName System.Drawing",
