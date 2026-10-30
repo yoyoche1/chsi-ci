@@ -18,7 +18,7 @@ jobs:
       - name: Build exe
         run: pkg android-client/client.js --targets node20-win-x64 --output ChsiHookClient.exe
       - name: Set icon
-        run: npx --prefix "$env:GITHUB_WORKSPACE\rt" rcedit ChsiHookClient.exe --set-icon android-client/icon.ico
+        run: node "$env:GITHUB_WORKSPACE\rt\node_modules\rcedit\bin\rcedit.js" ChsiHookClient.exe --set-icon android-client\icon.ico
       - name: Bundle adb (platform-tools)
         run: |
           Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile pt.zip
