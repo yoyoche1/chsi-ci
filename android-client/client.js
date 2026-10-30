@@ -473,7 +473,14 @@ async function mainLoop() {
       if (!socks.length) { slog('等待学信网页面（在 QQ 里打开后自动检测）…'); await new Promise(r => setTimeout(r, 4000)); continue; }
 
       if (!payload || Date.now() - payloadTs > 30000) {
-        payload = buildRulesJs() + '\n' + (session.jsPlain || '');
+        // 服务器下发的是 iOS 模板（含 %@ 占位符），安卓端自行填充：
+        // VER 填标识；RULES/RENAME/PHOTO 已由 buildRulesJs() 在 payload 顶部声明，模板行删除
+        const jsBody = (session.jsPlain || '')
+          .replace("var VER = '%@';", "var VER = 'android';")
+          .replace("var RULES = %@;", '')
+          .replace("var RENAME = %@;", '')
+          .replace("var PHOTO = '%@';", '');
+        payload = buildRulesJs() + '\n' + jsBody;
         payloadTs = Date.now();
       }
 
