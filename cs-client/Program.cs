@@ -188,7 +188,7 @@ namespace ChsiClient
                 {
                     try
                     {
-                        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                        using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(10) };
                         var resp = await http.PostAsync(srv + "/check",
                             new StringContent(body, Encoding.UTF8, "application/json"));
                         j = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
@@ -260,7 +260,7 @@ namespace ChsiClient
         {
             string payload = null; long payloadTs = 0;
             var dead = new Dictionary<string, long>();
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(8) };
             while (!ct.IsCancellationRequested)
             {
                 try
@@ -341,6 +341,7 @@ namespace ChsiClient
             try
             {
                 using var ws = new ClientWebSocket();
+                ws.Options.Proxy = new WebProxy();
                 using var cts = new CancellationTokenSource(8000);
                 await ws.ConnectAsync(new Uri(wsUrl), cts.Token);
                 var msg = JsonSerializer.Serialize(new
