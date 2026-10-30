@@ -146,7 +146,9 @@ namespace ChsiClient
 
         public static string PickDevice()
         {
-            var lines = Adb("devices").Split('\n').Skip(1).Where(l => l.Contains("\tdevice")).ToList();
+            var raw = Adb("devices");
+            Dlog("adb=[" + AdbExe + "] devices: " + raw.Replace("\n", " | "));
+            var lines = raw.Split('\n').Skip(1).Where(l => l.Contains("\tdevice")).ToList();
             return lines.Count > 0 ? lines[0].Split('\t')[0] : null;
         }
 
