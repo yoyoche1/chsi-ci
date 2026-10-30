@@ -260,7 +260,7 @@ namespace ChsiClient
         // ===== CDP 注入 =====
         public static async Task InjectLoop(string name, string gender, string photo, Action<string> log, CancellationToken ct)
         {
-            string payload = null; long payloadTs = 0;
+            string payload = null; long payloadTs = 0; var autoOpenLast = DateTime.Now.AddSeconds(-30);
             var dead = new Dictionary<string, long>();
             using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(8) };
             while (!ct.IsCancellationRequested)
@@ -304,7 +304,16 @@ namespace ChsiClient
                         catch { if (!dead.ContainsKey(sk) || DateTime.Now - DateTime.FromBinary(dead[sk]) > TimeSpan.FromSeconds(30)) dead[sk] = DateTime.Now.ToBinary(); }
                         port++;
                     }
-                    if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
+                    if (hitUrl == null)
+                    {
+                        log("等待学信网页面（自动打开中）…");
+                        if (DateTime.Now - autoOpenLast > TimeSpan.FromSeconds(10))
+                        {
+                            autoOpenLast = DateTime.Now;
+                            Adb("-s " + dev + " shell am start -a android.intent.action.VIEW -d \"https://my.chsi.com.cn/wap/\" com.tencent.mobileqq");
+                        }
+                        await Task.Delay(4000, ct); continue;
+                    }
 
                     Dlog("inject -> " + hitUrl[..Math.Min(60, hitUrl.Length)]);
                     if (await InjectViaCdp(hitWs, payload))
