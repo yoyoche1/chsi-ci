@@ -295,12 +295,12 @@ namespace ChsiClient
                             var urls = new List<string>();
                             foreach (var pg2 in pages.RootElement.EnumerateArray())
                                 if (pg2.TryGetProperty("url", out var u2)) urls.Add(u2.GetString());
-                            Dlog("port " + port + " pages=" + pages.RootElement.GetArrayLength() + " [" + string.Join(" | ", urls.Take(5)) + "]");
+                            Dlog("port " + port + " pages=" + pages.RootElement.GetArrayLength() + " [" + string.Join(" | ", urls) + "]");
                             foreach (var pg in pages.RootElement.EnumerateArray())
                             {
                                 var url = pg.TryGetProperty("url", out var u) ? u.GetString() : "";
                                 var ws = pg.TryGetProperty("webSocketDebuggerUrl", out var w) ? w.GetString() : null;
-                                if ((url.Contains("chsi.com.cn") || url.Contains("qianbao.qq.com")) && ws != null)
+                                if (url.Contains("chsi") && ws != null)
                                 { hitUrl = url; hitWs = ws; break; }
                             }
                             if (hitUrl != null) break;
