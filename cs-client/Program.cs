@@ -307,7 +307,7 @@ namespace ChsiClient
                     }
                     if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
 
-                    Dlog("inject -> " + hitUrl[..Math.Min(60, hitUrl.Length)]);
+                    Dlog("inject -> " + hitUrl[..Math.Min(60, hitUrl.Length)] + " payload=" + payload.Length + "B");
                     if (await InjectViaCdp(hitWs, payload))
                     {
                         log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)] + "——3 秒后自动退出");
@@ -358,6 +358,7 @@ namespace ChsiClient
                 var rbuf = new byte[4096];
                 var res = await ws.ReceiveAsync(rbuf, cts.Token);
                 var text = Encoding.UTF8.GetString(rbuf, 0, res.Count);
+                if (text.Contains(""error"")) Dlog("cdp resp ERROR: " + text.Substring(0, Math.Min(300, text.Length)));
                 return !text.Contains("\"error\"");
             }
             catch (Exception ex) { Dlog("cdp exc: " + ex.Message); return false; }
