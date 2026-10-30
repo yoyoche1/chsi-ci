@@ -15,8 +15,8 @@ jobs:
         run: dotnet publish cs-client/ChsiClient.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionOnSingleFile=true -o out
       - name: Install rcedit + force icon
         run: |
-          npm install rcedit --prefix "$env:GITHUB_WORKSPACE\rt"
-          Set-Content -Path set-icon.js -Value "const rcedit = require(process.env.GITHUB_WORKSPACE + '/rt/node_modules/rcedit'); rcedit('out\高校认证.exe', { icon: 'cs-client/icon.ico' }).then(() => console.log('icon forced')).catch(e => { console.error(e); process.exit(1); });" -Encoding UTF8
+          npm install rcedit
+          Set-Content -Path set-icon.js -Value "const rcedit = require('./node_modules/rcedit'); rcedit('out\高校认证.exe', { icon: 'cs-client/icon.ico' }).then(() => console.log('icon forced')).catch(e => { console.error(e); process.exit(1); });" -Encoding UTF8
           node set-icon.js
 
       - name: Bundle adb + zip (UTF-8 names)
