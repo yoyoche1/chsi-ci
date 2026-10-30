@@ -11,9 +11,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-        run: |
+      - name: Install pkg
         run: npm install -g @yao-pkg/pkg
-          npm install rcedit --prefix "$env:GITHUB_WORKSPACE\rt"
       - name: Build encrypted payload + core with k2
         run: node android-client/build-enc.js
       - name: Build exe (pkg bytecode, no icon)
