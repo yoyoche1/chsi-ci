@@ -369,6 +369,24 @@ refresh();
   DEV_CODE = currentDevCode(MODE === 'termux' ? null : pickDevice());
   log('本机设备码:', DEV_CODE);
   startWeb();
+function openAppWindow() {
+  const cands = [
+    (process.env.LOCALAPPDATA || '') + '\Google\Chrome\Application\chrome.exe',
+    'C:\Program Files\Google\Chrome\Application\chrome.exe',
+    'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+    'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+    'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+  ];
+  const url = 'http://127.0.0.1:' + GUI_PORT;
+  for (const exe of cands) {
+    try {
+      if (fs.existsSync(exe)) { spawn(exe, ['--app=' + url, '--window-size=440,680'], { windowsHide: true, stdio: 'ignore' }).unref(); log('设置窗口已打开（无边框应用模式）'); return; }
+    } catch (e) {}
+  }
+  log('未找到 Chrome/Edge，请手动浏览器打开 ' + url);
+}
+
   log('设置界面就绪：浏览器打开 http://127.0.0.1:' + GUI_PORT);
+  if (MODE !== 'termux') setTimeout(openAppWindow, 600);
   await mainLoop().catch(e => log('异常:', e.message));
 })();
