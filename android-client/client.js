@@ -254,7 +254,13 @@ async function mainLoop() {
 function startWeb() {
   http.createServer((req, res) => {
     const u = req.url.split('?')[0];
-    if (req.method === 'GET' && u === '/status') {
+    if (req.method === 'GET' && u === '/ui') {
+      res.writeHead(200, { 'Content-Type': 'application/hta; charset=utf-8' });
+      res.end(uiHtml());
+    } else if (req.method === 'GET' && u === '/') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(uiHtml());
+    } else if (req.method === 'GET' && u === '/status') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         devCode: DEV_CODE || '', authed, code: OVR.code, name: OVR.name,
@@ -289,124 +295,70 @@ function startWeb() {
   }).listen(GUI_PORT, '127.0.0.1', () => log('内置界面服务: http://127.0.0.1:' + GUI_PORT));
 }
 
-// ===== PS 原生窗口（-EncodedCommand 内嵌，零脚本文件，Apple 风格）=====
-function psUiScript() {
-  return [
-    "$ErrorActionPreference = 'Stop'",
-    "Add-Type -AssemblyName System.Windows.Forms",
-    "Add-Type -AssemblyName System.Drawing",
-    "[Windows.Forms.Application]::EnableVisualStyles()",
-    "$api = 'http://127.0.0.1:8901'",
-    "function Get-St { Invoke-RestMethod -Uri ($api + '/status') -TimeoutSec 3 }",
-    "function Post-Save($o) {",
-    "  $json = $o | ConvertTo-Json -Compress",
-    "  $buf = [Text.Encoding]::UTF8.GetBytes($json)",
-    "  Invoke-RestMethod -Uri ($api + '/save') -Method Post -Body $buf -ContentType 'application/json; charset=utf-8' -TimeoutSec 5 | Out-Null",
-    "}",
-    "$form = New-Object Windows.Forms.Form",
-    "$form.Text = '高校认证'",
-    "$form.Size = New-Object Drawing.Size(430, 700)",
-    "$form.StartPosition = 'CenterScreen'",
-    "$form.FormBorderStyle = 'FixedSingle'",
-    "$form.MaximizeBox = $false",
-    "$form.BackColor = [Drawing.Color]::White",
-    "$form.TopMost = $true",
-    "$showTm = New-Object Windows.Forms.Timer",
-    "$showTm.Interval = 800",
-    "$showTm.Add_Tick({",
-    "  try {",
-    "    Add-Type -Namespace N3 -Name W3 -MemberDefinition '[DllImport(\'user32.dll\')] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'",
-    "    [N3.W3]::ShowWindow($form.Handle, 5) | Out-Null",
-    "    $showTm.Stop()",
-    "  } catch {}",
-    "})",
-    "$showTm.Start()",
-    "function Add-Ctl($c, $x, $y) { $c.Location = New-Object Drawing.Point($x, $y); $form.Controls.Add($c); return $c }",
-    "$title = Add-Ctl (New-Object Windows.Forms.Label) 24 20; $title.Text = '高校认证'; $title.AutoSize = $true; $title.Font = New-Object Drawing.Font('Segoe UI', 17, [Drawing.FontStyle]::Bold); $title.ForeColor = [Drawing.Color]::FromArgb(29,29,31)",
-    "$sub = Add-Ctl (New-Object Windows.Forms.Label) 24 62; $sub.Text = 'QQ 学信网认证辅助 · 本机运行'; $sub.AutoSize = $true; $sub.Font = New-Object Drawing.Font('Segoe UI', 9); $sub.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "$t1 = Add-Ctl (New-Object Windows.Forms.Label) 24 104; $t1.Text = '设备码（发给管理员换授权码）'; $t1.AutoSize = $true; $t1.Font = New-Object Drawing.Font('Segoe UI', 9); $t1.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "$tbDev = Add-Ctl (New-Object Windows.Forms.TextBox) 24 126; $tbDev.Width = 250; $tbDev.ReadOnly = $true; $tbDev.BorderStyle = 'None'; $tbDev.Font = New-Object Drawing.Font('Segoe UI', 13, [Drawing.FontStyle]::Bold); $tbDev.BackColor = [Drawing.Color]::White",
-    "$btnCopy = Add-Ctl (New-Object Windows.Forms.Button) 300 120; $btnCopy.Text = '复制'; $btnCopy.Width = 80; $btnCopy.Height = 34; $btnCopy.FlatStyle = 'Flat'; $btnCopy.FlatAppearance.BorderSize = 0; $btnCopy.BackColor = [Drawing.Color]::FromArgb(242,242,247); $btnCopy.ForeColor = [Drawing.Color]::FromArgb(0,122,255); $btnCopy.Font = New-Object Drawing.Font('Segoe UI', 9)",
-    "$btnCopy.Add_Click({ try { [Windows.Forms.Clipboard]::SetText($tbDev.Text); $btnCopy.Text = '已复制 ✓' } catch {} })",
-    "$sep1 = Add-Ctl (New-Object Windows.Forms.Label) 24 168; $sep1.Width = 360; $sep1.Height = 1; $sep1.BackColor = [Drawing.Color]::FromArgb(210,210,215); $sep1.AutoSize = $false",
-    "$t2 = Add-Ctl (New-Object Windows.Forms.Label) 24 184; $t2.Text = '授权码'; $t2.AutoSize = $true; $t2.Font = New-Object Drawing.Font('Segoe UI', 9); $t2.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "$tbCode = Add-Ctl (New-Object Windows.Forms.TextBox) 24 206; $tbCode.Width = 360; $tbCode.BorderStyle = 'None'; $tbCode.Font = New-Object Drawing.Font('Segoe UI', 11)",
-    "$sp2 = Add-Ctl (New-Object Windows.Forms.Label) 24 234; $sp2.Width = 360; $sp2.Height = 1; $sp2.BackColor = [Drawing.Color]::FromArgb(210,210,215); $sp2.AutoSize = $false",
-    "$t3 = Add-Ctl (New-Object Windows.Forms.Label) 24 250; $t3.Text = '姓名'; $t3.AutoSize = $true; $t3.Font = New-Object Drawing.Font('Segoe UI', 9); $t3.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "$tbName = Add-Ctl (New-Object Windows.Forms.TextBox) 24 272; $tbName.Width = 360; $tbName.BorderStyle = 'None'; $tbName.Font = New-Object Drawing.Font('Segoe UI', 11)",
-    "$sp3 = Add-Ctl (New-Object Windows.Forms.Label) 24 300; $sp3.Width = 360; $sp3.Height = 1; $sp3.BackColor = [Drawing.Color]::FromArgb(210,210,215); $sp3.AutoSize = $false",
-    "$t4 = Add-Ctl (New-Object Windows.Forms.Label) 24 316; $t4.Text = '性别'; $t4.AutoSize = $true; $t4.Font = New-Object Drawing.Font('Segoe UI', 9); $t4.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "$rbM = Add-Ctl (New-Object Windows.Forms.RadioButton) 24 338; $rbM.Text = '男'; $rbM.Width = 70; $rbM.FlatStyle = 'Flat'; $rbM.Font = New-Object Drawing.Font('Segoe UI', 10)",
-    "$rbF = Add-Ctl (New-Object Windows.Forms.RadioButton) 104 338; $rbF.Text = '女'; $rbF.Width = 70; $rbF.FlatStyle = 'Flat'; $rbF.Font = New-Object Drawing.Font('Segoe UI', 10)",
-    "$t5 = Add-Ctl (New-Object Windows.Forms.Label) 24 378; $t5.Text = '照片'; $t5.AutoSize = $true; $t5.Font = New-Object Drawing.Font('Segoe UI', 9); $t5.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "$btnPhoto = Add-Ctl (New-Object Windows.Forms.Button) 24 400; $btnPhoto.Text = '选择照片…'; $btnPhoto.Width = 130; $btnPhoto.Height = 36; $btnPhoto.FlatStyle = 'Flat'; $btnPhoto.FlatAppearance.BorderSize = 0; $btnPhoto.BackColor = [Drawing.Color]::FromArgb(242,242,247); $btnPhoto.ForeColor = [Drawing.Color]::FromArgb(0,122,255); $btnPhoto.Font = New-Object Drawing.Font('Segoe UI', 9)",
-    "$lbPhoto = Add-Ctl (New-Object Windows.Forms.Label) 170 410; $lbPhoto.Text = '未选择'; $lbPhoto.AutoSize = $true; $lbPhoto.Font = New-Object Drawing.Font('Segoe UI', 9); $lbPhoto.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "$btnSave = Add-Ctl (New-Object Windows.Forms.Button) 24 460; $btnSave.Text = '保存并应用'; $btnSave.Width = 360; $btnSave.Height = 46; $btnSave.FlatStyle = 'Flat'; $btnSave.FlatAppearance.BorderSize = 0; $btnSave.BackColor = [Drawing.Color]::FromArgb(209,209,214); $btnSave.ForeColor = [Drawing.Color]::White; $btnSave.Enabled = $false; $btnSave.Font = New-Object Drawing.Font('Segoe UI', 11, [Drawing.FontStyle]::Bold)",
-    "$lbSt = Add-Ctl (New-Object Windows.Forms.Label) 24 524; $lbSt.Text = '● 未授权'; $lbSt.AutoSize = $true; $lbSt.Font = New-Object Drawing.Font('Segoe UI', 10, [Drawing.FontStyle]::Bold); $lbSt.ForeColor = [Drawing.Color]::FromArgb(255,59,48)",
-    "$lbTip = Add-Ctl (New-Object Windows.Forms.Label) 24 556; $lbTip.Text = '手机 USB 连接 · QQ 打开学信网页面并保持前台'; $lbTip.AutoSize = $true; $lbTip.Font = New-Object Drawing.Font('Segoe UI', 8); $lbTip.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "$lbLog = Add-Ctl (New-Object Windows.Forms.Label) 24 584; $lbLog.Width = 360; $lbLog.Height = 60; $lbLog.BackColor = [Drawing.Color]::FromArgb(242,242,247); $lbLog.Font = New-Object Drawing.Font('微软雅黑', 8); $lbLog.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
-    "function Update-Save {",
-    "  $ok = ($tbCode.Text.Trim() -ne '') -and ($tbName.Text.Trim() -ne '') -and ($rbM.Checked -or $rbF.Checked) -and ($lbPhoto.Tag -ne $null)",
-    "  $btnSave.Enabled = $ok",
-    "  if ($ok) { $btnSave.BackColor = [Drawing.Color]::FromArgb(0,122,255) } else { $btnSave.BackColor = [Drawing.Color]::FromArgb(209,209,214) }",
-    "}",
-    "$tbCode.Add_TextChanged({ Update-Save })",
-    "$tbName.Add_TextChanged({ Update-Save })",
-    "$rbM.Add_CheckedChanged({ Update-Save })",
-    "$rbF.Add_CheckedChanged({ Update-Save })",
-    "$lbPhoto.Add_TextChanged({ Update-Save })",
-    "$btnCopy.Add_Click({ try { [Windows.Forms.Clipboard]::SetText($tbDev.Text); $btnCopy.Text = '已复制 ✓' } catch {} })",
-    "$btnPhoto.Add_Click({",
-    "  try {",
-    "    $dlg = New-Object Windows.Forms.OpenFileDialog",
-    "    $dlg.Filter = '图片|*.jpg;*.jpeg;*.png'",
-    "    if ($dlg.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) {",
-    "      $ext = [IO.Path]::GetExtension($dlg.FileName).ToLower().TrimStart('.')",
-    "      $mime = 'image/jpeg'; if ($ext -eq 'png') { $mime = 'image/png' }",
-    "      $lbPhoto.Tag = 'data:' + $mime + ';base64,' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($dlg.FileName))",
-    "      $lbPhoto.Text = Split-Path -Leaf $dlg.FileName",
-    "      Update-Save",
-    "    }",
-    "  } catch {}",
-    "})",
-    "$btnSave.Add_Click({",
-    "  try {",
-    "    $g = ''; if ($rbM.Checked) { $g = '男' }; if ($rbF.Checked) { $g = '女' }",
-    "    Post-Save @{ code = $tbCode.Text.Trim(); name = $tbName.Text.Trim(); gender = $g; photoData = [string]$lbPhoto.Tag; photoName = $lbPhoto.Text }",
-    "    $lbSt.Text = '● 已保存，应用中…'",
-    "  } catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message, '错误') | Out-Null }",
-    "})",
-    "$tm = New-Object Windows.Forms.Timer",
-    "$tm.Interval = 1000",
-    "$tm.Add_Tick({",
-    "  try {",
-    "    $st = Get-St",
-    "    if ($st.icon -and -not $script:iconSet) {",
-    "      try {",
-    "        $ms = New-Object IO.MemoryStream(,[Convert]::FromBase64String([string]$st.icon))",
-    "        $bmp = New-Object Drawing.Bitmap($ms)",
-    "        $form.Icon = [Drawing.Icon]::FromHandle($bmp.GetHicon())",
-    "        $script:iconSet = $true",
-    "      } catch {}",
-    "    }",
-    "    if (-not $st) { $script:dead = [int]$script:dead + 1; if ($script:dead -ge 2) { $form.Close() }; return }",
-    "    $script:dead = 0",
-    "    if ($st.devCode) { $tbDev.Text = [string]$st.devCode }",
-    "    if ($st.authed) { $lbSt.Text = '● 已授权 · 注入运行中'; $lbSt.ForeColor = [Drawing.Color]::FromArgb(52,199,89) }",
-    "    else { $lbSt.Text = '● 未授权 / 等待设备'; $lbSt.ForeColor = [Drawing.Color]::FromArgb(255,59,48) }",
-    "    $lbLog.Text = ([string]::Join([Environment]::NewLine, @($st.logs | Select-Object -Last 4)))",
-    "  } catch {}",
-    "})",
-    "$tm.Start()",
-    "[Windows.Forms.Application]::Run($form)",
-  ].join('\r\n');
+// ===== HTA 原生设置窗口（mshta = GUI，无控制台无浏览器）
+function uiHtml() {
+  return `<!DOCTYPE html><html lang="zh-CN"><head>
+<hta:application applicationname="高校认证" border="thin" caption="yes" maximizebutton="no" minimizebutton="yes" showintaskbar="yes" singleinstance="yes" sysmenu="yes" scroll="no" contextmenu="no">
+<meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=11">
+<title>高校认证</title><style>
+body{margin:0;background:#fff;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#1d1d1f}
+.app{width:360px;padding:24px 22px}
+h1{font-size:26px;margin:0 0 6px}
+.sub{color:#86868b;font-size:13px;margin-bottom:20px}
+label{display:block;color:#86868b;font-size:12px;margin:14px 0 4px}
+input[type=text]{width:100%;border:0;border-bottom:1px solid #d2d2d7;padding:7px 2px;font-size:15px;outline:none;font-family:inherit;background:#fff}
+input[type=text]:focus{border-bottom-color:#007aff}
+.devrow{display:flex;align-items:center;gap:10px}
+.devcode{font-size:21px;font-weight:700;letter-spacing:1px}
+button{background:#f2f2f7;color:#007aff;border:0;border-radius:8px;padding:6px 13px;font-size:13px;cursor:pointer;font-family:inherit}
+.seg label{display:inline-flex;align-items:center;gap:5px;margin-right:16px;color:#1d1d1f;font-size:14px}
+#save{width:100%;background:#d2d2d7;color:#fff;border:0;border-radius:12px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;margin-top:22px;font-family:inherit}
+#save.on{background:#007aff}
+.st{margin-top:14px;font-size:13px;font-weight:600}
+.ok{color:#34c759}.bad{color:#ff3b30}
+.logs{margin-top:10px;background:#f2f2f7;border-radius:10px;padding:9px 11px;font-size:12px;color:#86868b;min-height:52px}
+#photoFile{display:none}
+#photoName{font-size:12px;color:#86868b;margin-left:8px}
+</style></head><body onload="window.resizeTo(430,600)"><div class="app">
+<h1>高校认证</h1><div class="sub">QQ 学信网认证辅助 · 本机运行</div>
+<label>设备码（发给管理员换授权码）</label><div class="devrow"><span class="devcode" id="dev"></span><button onclick="copyDev(this)">复制</button></div>
+<label>授权码</label><input type="text" id="code">
+<label>姓名</label><input type="text" id="name">
+<label>性别</label><div class="seg"><label><input type="radio" name="g" value="男">男</label><label><input type="radio" name="g" value="女" checked>女</label></div>
+<label>照片</label><div><button onclick="document.getElementById('photoFile').click()">选择照片…</button><span id="photoName"></span><input type="file" id="photoFile" accept="image/jpeg,image/png" onchange="onPhoto()"></div>
+<button id="save" onclick="saveAll()">保存并应用</button>
+<div class="st bad" id="st">● 未授权 / 等待设备</div>
+<div class="logs" id="logs"></div>
+</div>
+<script>
+var photoData="";function $(id){return document.getElementById(id)}
+function esc(t){return String(t).replace(/</g,"&lt;")}
+function refresh(){var x=new XMLHttpRequest();x.open("GET","/status",true);
+x.onreadystatechange=function(){if(x.readyState===4){
+if(x.status===200){var st;try{st=JSON.parse(x.responseText)}catch(e){st=null}
+if(st){$("dev").innerHTML=esc(st.devCode||"");
+if(st.authed){$("st").className="st ok";$("st").innerHTML="● 已授权 · 注入运行中"}
+else{$("st").className="st bad";$("st").innerHTML="● 未授权 / 等待设备"}
+var l=st.logs||[];$("logs").innerHTML=esc(l.slice(Math.max(0,l.length-4)).join(String.fromCharCode(10))).replace(/\n/g,"<br>");}}
+else{$("st").className="st bad";$("st").innerHTML="● 已退出"}
+setTimeout(refresh,1000);}};x.send()}
+setInterval(function(){var ok=$("code").value.replace(/\s/g,"")&&$("name").value.replace(/\s/g,"")&&photoData;$("save").className=ok?"on":""},300);
+function onPhoto(){var f=$("photoFile").files;if(!f||!f[0])return;var r=new FileReader();r.onload=function(){photoData=r.result;$("photoName").innerHTML=esc(f[0].name)};r.readAsDataURL(f[0])}
+function copyDev(btn){var t=$("dev").innerHTML||"";try{window.clipboardData.setData("Text",t)}catch(e){}btn.innerHTML="已复制 ✓"}
+function saveAll(){
+var gs=document.getElementsByName("g"),g="";for(var i=0;i<gs.length;i++){if(gs[i].checked)g=gs[i].value}
+var body={code:$("code").value.replace(/^\s+|\s+$/g,""),name:$("name").value.replace(/^\s+|\s+$/g,""),gender:g,photoData:photoData,photoName:$("photoName").innerHTML||"photo"};
+var x=new XMLHttpRequest();x.open("POST","/save",true);x.setRequestHeader("Content-Type","application/json; charset=utf-8");
+x.onreadystatechange=function(){if(x.readyState===4&&x.status===200){$("st").className="st";$("st").innerHTML="● 已保存，授权校验中…"}};
+x.send(JSON.stringify(body));}
+refresh();
+</script></body></html>`;
 }
-function startPsWindow() {
-  try {
-    const b64 = Buffer.from(psUiScript(), 'utf16le').toString('base64');
-    spawn('conhost.exe', ['--headless', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-EncodedCommand', b64], { cwd: WRITABLE, windowsHide: true, stdio: 'ignore' }).unref();
-    log('设置窗口已打开（后台运行）');
-  } catch (e) { log('窗口启动失败:', e.message); }
+
+function startHtaWindow() {
+  if (MODE === 'termux') return;
+  try { spawn('mshta.exe', ['http://127.0.0.1:' + GUI_PORT + '/ui'], { windowsHide: true, stdio: 'ignore' }).unref(); log('设置窗口已打开'); }
+  catch (e) { log('打开窗口失败，请手动访问 http://127.0.0.1:' + GUI_PORT + '/ui'); }
 }
 
 // ===== 入口 =====
@@ -415,6 +367,6 @@ function startPsWindow() {
   DEV_CODE = currentDevCode(MODE === 'termux' ? null : pickDevice());
   log('本机设备码:', DEV_CODE);
   startWeb();
-  if (MODE !== 'termux') startPsWindow();
+  if (MODE !== 'termux') setTimeout(startHtaWindow, 800);
   await mainLoop().catch(e => log('异常:', e.message));
 })();
