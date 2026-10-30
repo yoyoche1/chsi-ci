@@ -288,6 +288,8 @@ const PS1_SRC = [
   "Add-Type -AssemblyName System.Windows.Forms",
   "Add-Type -AssemblyName System.Drawing",
   "[Windows.Forms.Application]::EnableVisualStyles()",
+  "Add-Type -Namespace Native -Name Wnd -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'",
+  "$form.Add_Shown({ [Native.Wnd]::ShowWindow($form.Handle, 5) | Out-Null; $form.Activate() })",
   "$base = Split-Path -Parent $MyInvocation.MyCommand.Path",
   "$cfgPath = Join-Path $base 'config.json'",
   "$statusPath = Join-Path $base 'status.json'",
@@ -389,7 +391,7 @@ function startPsWindow() {
   try {
     // -WindowStyle Hidden 是官方参数，不触发杀软启发式（区别于 wscript/PInvoke 隐藏）
     const errFd = fs.openSync(path.join(WRITABLE, 'ui-error.log'), 'a');
-    const ps = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, stdio: ['ignore', 'ignore', errFd] });
+    const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', p1], { cwd: WRITABLE, windowsHide: true, stdio: ['ignore', 'ignore', errFd] });
     slog('设置窗口已打开（后台运行）');
   } catch (e) { slog('窗口启动失败:', e.message); startWebGui(); }
 }
