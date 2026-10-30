@@ -410,6 +410,7 @@ namespace ChsiClient
                         + ";base64," + Convert.ToBase64String(File.ReadAllBytes(dlg.FileName));
                     photoName = Path.GetFileName(dlg.FileName);
                     lbPhoto.Text = photoName;
+                    TextChangedCheck(null, null);
                 }
             };
             Controls.Add(btnPhoto); Controls.Add(lbPhoto);
