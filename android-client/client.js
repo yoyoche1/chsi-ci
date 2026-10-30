@@ -412,14 +412,14 @@ function findDevtoolsSockets(dev) {
   const out = adb(`-s ${dev} shell cat /proc/net/unix`);
   const socks = [];
   for (const line of out.split('\n')) {
-    const m = line.match(/(\S*devtools_remote\S*)$/i);
-    if (m) socks.push(m[1]);
+    const m = line.match(/(\S*devtools_remote\S*)\s*$/i);
+    if (m) socks.push(m[1].replace(/^@/, ''));
   }
   socks.sort((a, b) => (b.includes('tencent') || b.includes('mobileqq') ? 1 : 0) - (a.includes('tencent') || a.includes('mobileqq') ? 1 : 0));
   return socks;
 }
 async function listPages(port) {
-  const r = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(4000) });
+  const r = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(8000) });
   return r.json();
 }
 function injectViaCDP(t, expr) {
@@ -458,6 +458,7 @@ async function mainLoop() {
   let payload = '';
   let payloadTs = 0;
   let socketName = null;
+  const deadSockets = new Map();
 
   while (true) {
     try {
@@ -467,25 +468,32 @@ async function mainLoop() {
 
       const devArg = MODE === 'termux' ? 'localhost:5555' : (pickDevice() || dev0);
       if (!devArg) { await new Promise(r => setTimeout(r, 5000)); continue; }
-      const socks = findDevtoolsSockets(devArg);
-      if (!socks.length) { slog('等待内核调试口（QQ 打开 debugx5.qq.com 勾选 Inspect 后杀 QQ 重开）…'); await new Promise(r => setTimeout(r, 5000)); continue; }
-      if (socks[0] !== socketName) {
-        socketName = socks[0];
-        adb(`-s ${devArg} forward tcp:9222 localabstract:${socketName}`);
-        slog('devtools socket:', socketName);
-      }
+      const now = Date.now();
+      const socks = findDevtoolsSockets(devArg).filter(x => !deadSockets.has(x) || now - deadSockets.get(x) > 30000);
+      if (!socks.length) { slog('等待学信网页面（在 QQ 里打开后自动检测）…'); await new Promise(r => setTimeout(r, 4000)); continue; }
 
       if (!payload || Date.now() - payloadTs > 30000) {
         payload = buildRulesJs() + '\n' + (session.jsPlain || '');
         payloadTs = Date.now();
       }
-      const pages = await listPages(9222);
-      for (const t of pages) {
-        if (!t.url || !t.url.includes('chsi.com.cn')) continue;
-        if (!t.webSocketDebuggerUrl) continue;
-        const ok2 = await injectViaCDP(t, payload);
-        if (ok2) slog('✅ 已注入:', t.url.slice(0, 70));
+
+      let hit = null;
+      for (const sk of socks) {
+        try {
+          adb(`-s ${devArg} forward tcp:9333 localabstract:${sk}`);
+          const pages = await listPages(9333);
+          const p = pages.find(t => t.url && (t.url.includes('chsi.com.cn') || t.url.includes('qianbao.qq.com')) && t.webSocketDebuggerUrl);
+          if (p) { hit = p; socketName = sk; deadSockets.delete(sk); break; }
+          deadSockets.set(sk, 0);   // 响应了但没目标页面：本会话跳过（0 = 永久）
+        } catch (e) {
+          if (!deadSockets.has(sk) || deadSockets.get(sk) !== 0) deadSockets.set(sk, Date.now());   // 超时：30s 冷却后重试
+        }
       }
+      if (!hit) { slog('等待学信网页面（在 QQ 里打开后自动检测）…'); await new Promise(r => setTimeout(r, 4000)); continue; }
+
+      const ok2 = await injectViaCDP(hit, payload);
+      if (ok2) slog('✅ 已注入:', hit.url.slice(0, 70));
+      deadSockets.clear();
     } catch (e) { }
     await new Promise(r => setTimeout(r, 1500));
     if (Date.now() > session.exp - 60000) {
