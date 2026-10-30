@@ -283,7 +283,7 @@ namespace ChsiClient
 
                     Adb($"-s {dev} forward --remove-all");
                     string hitUrl = null, hitWs = null;
-                    int port = 19300;
+                    int port = NextPort();
                     foreach (var sk in socks)
                     {
                         try
@@ -304,10 +304,8 @@ namespace ChsiClient
                                 { hitUrl = url; hitWs = ws; break; }
                             }
                             if (hitUrl != null) break;
-                            dead[sk] = DateTime.Now.ToBinary();
                         }
                         catch (Exception ex2) { Dlog("port " + port + " exc: " + ex2.Message); if (!dead.ContainsKey(sk) || DateTime.Now - DateTime.FromBinary(dead[sk]) > TimeSpan.FromSeconds(30)) dead[sk] = DateTime.Now.ToBinary(); }
-                        port++;
                     }
                     if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
 
@@ -328,6 +326,9 @@ namespace ChsiClient
                 }
             }
         }
+
+        static int _portCounter = 20000;
+        static int NextPort() { var p = _portCounter; _portCounter++; if (_portCounter > 45000) _portCounter = 20000; return p; }
 
         static List<string> FindSockets(string dev)
         {
