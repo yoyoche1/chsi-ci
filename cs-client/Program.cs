@@ -137,8 +137,10 @@ namespace ChsiClient
                 var psi = new ProcessStartInfo(file, args)
                 { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
                 using var p = Process.Start(psi);
+                var readTask = p.StandardOutput.ReadToEndAsync();
                 if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch { } return ""; }
-                return p.StandardOutput.ReadToEnd().Trim();
+                var output = readTask.GetAwaiter().GetResult().Trim();
+                return output;
             }
             catch { return ""; }
         }
@@ -326,6 +328,7 @@ namespace ChsiClient
         {
             var out0 = new List<string>();
             var txt = Adb("-s " + dev + " shell cat /proc/net/unix");
+            Dlog("unix bytes=" + txt.Length);
             foreach (var line in txt.Split('\n'))
             {
                 if (line.Contains("remote")) Dlog("unix: " + line.Trim());
