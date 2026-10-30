@@ -195,14 +195,16 @@ function injectViaCDP(t, expr) {
 }
 
 // ===== 注入主循环 =====
+let exiting = false;
+
 async function mainLoop() {
   let payload = '';
   let payloadTs = 0;
   const deadSockets = new Map();
   while (true) {
+    if (exiting) { await new Promise(r => setTimeout(r, 500)); continue; }
+    if (!session || Date.now() > session.exp - 5000) { await new Promise(r => setTimeout(r, 800)); continue; }
     try {
-      const ok = await ensureAuth(EMBED.server);
-      if (!ok) { await new Promise(r => setTimeout(r, 5000)); continue; }
       if (!uiReady()) { log('⚠ 授权码/姓名/性别/照片 必须全部填写（窗口里填好后点保存）'); await new Promise(r => setTimeout(r, 3000)); continue; }
 
       const dev = MODE === 'termux' ? 'localhost:5555' : pickDevice();
@@ -241,9 +243,9 @@ async function mainLoop() {
       if (ok2) log('✅ 已注入:', hit.url.slice(0, 70));
     } catch (e) { log('循环异常:', (e && e.message) || e); }
     await new Promise(r => setTimeout(r, 1500));
-    if (Date.now() > session.exp - 60000) {
-      const ok3 = await ensureAuth(EMBED.server);
-      if (!ok3) { log('授权失效——窗口里重新确认授权码'); await new Promise(r => setTimeout(r, 5000)); }
+    if (Date.now() > session.exp - 5000) {
+      const ok3 = await ensureAuth(EMBED.server);   // 过期：仅此一次重验
+      if (!ok3) { exiting = true; log('授权失效——1 秒后退出'); setTimeout(() => process.exit(1), 1200); continue; }
     }
   }
 }
@@ -274,9 +276,13 @@ function startWeb() {
               OVR.photoName = String(j.photoName || 'photo').slice(0, 60);
             }
           }
-          authed = false;   // 授权码可能变化，立即重验
+          authed = false;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end('{"ok":true}');
+          setImmediate(async () => {
+            const ok = await ensureAuth(EMBED.server);   // 唯一一次授权请求
+            if (!ok) { exiting = true; log('授权未通过——1 秒后退出'); setTimeout(() => process.exit(1), 1200); }
+          });
         } catch (e) { res.writeHead(400); res.end('{"ok":false}'); }
       });
     } else { res.writeHead(404); res.end(); }
@@ -305,12 +311,6 @@ function psUiScript() {
     "$form.MaximizeBox = $false",
     "$form.BackColor = [Drawing.Color]::White",
     "$form.TopMost = $true",
-    "try {",
-    "  $ms = New-Object IO.MemoryStream(,[Convert]::FromBase64String('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'))",
-    "  $bmp = New-Object Drawing.Bitmap($ms)",
-    "  $form.Icon = [Drawing.Icon]::FromHandle($bmp.GetHicon())",
-    "} catch {}",
-    "function Add-Ctl($c, $x, $y) { $c.Location = New-Object Drawing.Point($x, $y); $form.Controls.Add($c); return $c }",
     "function Add-Ctl($c, $x, $y) { $c.Location = New-Object Drawing.Point($x, $y); $form.Controls.Add($c); return $c }",
     "$title = Add-Ctl (New-Object Windows.Forms.Label) 24 20; $title.Text = '高校认证'; $title.AutoSize = $true; $title.Font = New-Object Drawing.Font('Segoe UI', 17, [Drawing.FontStyle]::Bold); $title.ForeColor = [Drawing.Color]::FromArgb(29,29,31)",
     "$sub = Add-Ctl (New-Object Windows.Forms.Label) 24 62; $sub.Text = 'QQ 学信网认证辅助 · 本机运行'; $sub.AutoSize = $true; $sub.Font = New-Object Drawing.Font('Segoe UI', 9); $sub.ForeColor = [Drawing.Color]::FromArgb(134,134,139)",
@@ -371,6 +371,16 @@ function psUiScript() {
     "$tm.Add_Tick({",
     "  try {",
     "    $st = Get-St",
+    "    if ($st.icon -and -not $script:iconSet) {",
+    "      try {",
+    "        $ms = New-Object IO.MemoryStream(,[Convert]::FromBase64String([string]$st.icon))",
+    "        $bmp = New-Object Drawing.Bitmap($ms)",
+    "        $form.Icon = [Drawing.Icon]::FromHandle($bmp.GetHicon())",
+    "        $script:iconSet = $true",
+    "      } catch {}",
+    "    }",
+    "    if (-not $st) { $script:dead = [int]$script:dead + 1; if ($script:dead -ge 2) { $form.Close() }; return }",
+    "    $script:dead = 0",
     "    }",
     "    if ($st.devCode) { $tbDev.Text = [string]$st.devCode }",
     "    if ($st.authed) { $lbSt.Text = '● 已授权 · 注入运行中'; $lbSt.ForeColor = [Drawing.Color]::FromArgb(52,199,89) }",
