@@ -137,6 +137,7 @@ namespace ChsiClient
 
         public static string DevCode = "";
         public static Session Auth;
+        public static bool Injecting;
         public static bool Exiting = false;
 
         public class Session { public long Exp; public string JsPlain; public int JsVer; }
@@ -231,7 +232,7 @@ namespace ChsiClient
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 if (Guard.Compromised) return (false, "网络异常，请稍后重试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.3", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.4", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -516,7 +517,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.4.3";
+            Text = "高校认证 v4.4.4";
             ClientSize = new Size(430, 320);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -647,7 +648,7 @@ namespace ChsiClient
             tbDev.Text = string.IsNullOrEmpty(Program.DevCode) ? "等待设备连接…" : Program.DevCode;
             if (Program.Exiting) { lbSt.ForeColor = Color.FromArgb(255, 59, 48); lbSt.Text = "● 授权未通过，即将退出…"; return; }
             if (Program.Auth != null && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < Program.Auth.Exp)
-            { lbSt.ForeColor = Color.FromArgb(52, 199, 89); lbSt.Text = "● 已授权 · 注入运行中"; }
+            { lbSt.ForeColor = Color.FromArgb(52, 199, 89); lbSt.Text = Program.Injecting ? "● 已授权 · 注入运行中" : "● 已授权"; }
         }
 
         void TextChangedCheck(object s, EventArgs e)
@@ -674,6 +675,7 @@ namespace ChsiClient
                 Application.Exit();
                 return;
             }
+            Program.Injecting = true;
             lbSt.ForeColor = Color.FromArgb(52, 199, 89); lbSt.Text = "● 已授权 · 注入运行中";
             loopCts?.Cancel();
             loopCts = new CancellationTokenSource();
