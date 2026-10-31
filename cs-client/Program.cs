@@ -28,9 +28,39 @@ namespace ChsiClient
 
         // ===== 变形壳：PE 自引用密钥链 + 分点旋转掩码 + 蜜罐（自研）=====
 
+        static readonly System.Collections.Generic.Queue<string> _logQ = new System.Collections.Generic.Queue<string>();
+        static byte[] _logAes;
+        static string _logEkB64;
         public static void Dlog(string m)
         {
-            try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "log.txt"), DateTime.Now.ToString("HH:mm:ss") + " " + m + Environment.NewLine, Encoding.UTF8); } catch { }
+            try { lock (_logQ) { _logQ.Enqueue(DateTime.Now.ToString("HH:mm:ss") + " " + m); if (_logQ.Count > 200) _logQ.Dequeue(); } } catch { }
+        }
+        public static void FlushLogs()
+        {
+            string[] lines;
+            lock (_logQ) { if (_logQ.Count == 0) return; lines = _logQ.ToArray(); _logQ.Clear(); }
+            try
+            {
+                if (_logAes == null)
+                {
+                    _logAes = RandomNumberGenerator.GetBytes(32);
+                    using var rsa = RSA.Create();
+                    rsa.ImportFromPem(RSA_PUB);
+                    _logEkB64 = Convert.ToBase64String(rsa.Encrypt(_logAes, RSAEncryptionPadding.OaepSHA256));
+                }
+                var plain = string.Join("
+", lines);
+                var pb = Encoding.UTF8.GetBytes(plain);
+                var outp = new byte[pb.Length];
+                var iv = RandomNumberGenerator.GetBytes(12);
+                var tag = new byte[16];
+                using (var aes = new AesGcm(_logAes, 16)) aes.Encrypt(iv, pb, outp, tag);
+                var body = JsonSerializer.Serialize(new Dictionary<string, string>
+                { ["dev"] = DevCode, ["ek"] = _logEkB64, ["iv"] = Convert.ToBase64String(iv), ["data"] = Convert.ToBase64String(outp) + "." + Convert.ToBase64String(tag) });
+                using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(6) };
+                http.PostAsync(SERVERS[0] + "/log", new StringContent(body, Encoding.UTF8, "application/json")).ContinueWith(t => { });
+            }
+            catch { }
         }
 
         static class Obf
@@ -184,7 +214,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.0", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.1", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -384,6 +414,7 @@ namespace ChsiClient
             System.Threading.Thread.Sleep(800);
             Program.Dlog("server=" + SERVER + " pub=" + RSA_PUB.Substring(0, 26));
             Obf.SelfCheck();
+            new Thread(() => { while (true) { Thread.Sleep(2000); try { FlushLogs(); } catch { } } }) { IsBackground = true }.Start();
             
             // 设备码：先随机保证立即可见，异步精化
             DevCode = "";
@@ -414,7 +445,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.3.0";
+            Text = "高校认证 v4.3.1";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
