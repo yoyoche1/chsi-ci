@@ -13,6 +13,8 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Publish single-file exe
         run: dotnet publish cs-client/ChsiClient.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionOnSingleFile=true -o out
+      - name: Seal .text hash into exe (self-integrity)
+        run: python cs-client/seal.py "out\高校认证.exe"
       - name: Bundle adb + zip (UTF-8 names)
 
         run: |

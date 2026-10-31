@@ -1,0 +1,135 @@
+// Guard —— 防破解三件套（依据 PROTECTION.md 的正确顺序）：
+//   ① 反调试探针（IsDebuggerPresent / 远程调试 / PEB+NtGlobalFlag / Dr0-3 硬件断点）
+//   ② .text 区段自封签（构建后就地注入哈希，运行时比对；占位符方案避免自指死循环）
+//   ③ 中毒策略：不立刻退出——授权静默失败 + 随机 15~40s 后安静退出（伪装成网络问题）
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+
+static class Guard
+{
+    // 封签占位符：8 字节 magic + 64 字节 '0'（构建后由 seal.py 把 64 字节覆盖为 .text 的 sha256 hex）
+    static readonly byte[] SEAL_MAGIC = Encoding.ASCII.GetBytes("CHSISEAL");
+
+    static int _compromised; // 0=ok 1=调试器 2=完整性
+    public static bool Compromised => _compromised != 0;
+
+    public static void Init()
+    {
+        try { if (AntiDebug()) _compromised = 1; } catch { }
+        try { if (_compromised == 0 && !IntegrityOk()) _compromised = 2; } catch { _compromised = 2; }
+        if (!Compromised) return;
+        new Thread(() => { try { Thread.Sleep(new Random().Next(15000, 40000)); } catch { } Environment.Exit(1); }) { IsBackground = true }.Start();
+    }
+
+    // ===== ① 反调试探针（guard.go 等义移植）=====
+    [DllImport("kernel32.dll")] static extern bool IsDebuggerPresent();
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool CheckRemoteDebuggerPresent(IntPtr hProcess, ref bool isDebugged);
+    [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr hProcess, int infoClass, ref PROCESS_BASIC_INFORMATION info, int length, ref int returnLength);
+    [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr baseAddress, byte[] buffer, IntPtr size, ref IntPtr bytesRead);
+    [DllImport("kernel32.dll")] static extern bool GetThreadContext(IntPtr hThread, byte[] context);
+    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentThread();
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct PROCESS_BASIC_INFORMATION
+    {
+        public IntPtr ExitStatus;
+        public IntPtr PebBaseAddress;
+        public IntPtr AffinityMask;
+        public int BasePriority;
+        public IntPtr UniqueProcessId;
+        public IntPtr InheritedFromUniqueProcessId;
+    }
+
+    static bool AntiDebug()
+    {
+        if (Debugger.IsAttached) return true;
+        if (IsDebuggerPresent()) return true;
+        bool dbg = false;
+        try { CheckRemoteDebuggerPresent(GetCurrentProcess(), ref dbg); } catch { }
+        if (dbg) return true;
+
+        var pbi = new PROCESS_BASIC_INFORMATION();
+        int rl = 0;
+        if (NtQueryInformationProcess(GetCurrentProcess(), 0, ref pbi, Marshal.SizeOf(pbi), ref rl) == 0 && pbi.PebBaseAddress != IntPtr.Zero)
+        {
+            var buf = new byte[4];
+            var rd = IntPtr.Zero;
+            // PEB+0x02 = BeingDebugged
+            if (ReadProcessMemory(GetCurrentProcess(), pbi.PebBaseAddress + 2, buf, (IntPtr)1, ref rd) && buf[0] != 0) return true;
+            // PEB->NtGlobalFlag (x64 +0xBC)，调试器会打开 FLG_HEAP_* 位
+            rd = IntPtr.Zero;
+            if (ReadProcessMemory(GetCurrentProcess(), pbi.PebBaseAddress + 0xBC, buf, (IntPtr)4, ref rd) && (BitConverter.ToUInt32(buf, 0) & 0x70) != 0) return true;
+        }
+
+        // 硬件断点 Dr0-3（x64 CONTEXT 1232B；flags@0x30 = AMD64|DEBUG_REGISTERS；Dr@0x48..0x60）
+        var ctx = new byte[1232];
+        BitConverter.GetBytes(0x00100010u).CopyTo(ctx, 0x30);
+        try
+        {
+            if (GetThreadContext(GetCurrentThread(), ctx))
+                for (int off = 0x48; off <= 0x60; off += 8)
+                    if (BitConverter.ToUInt64(ctx, off) != 0) return true;
+        }
+        catch { }
+        return false;
+    }
+
+    // ===== ② .text 区段自封签 =====
+    static int IndexOf(byte[] hay, byte[] needle)
+    {
+        for (int i = 0; i + needle.Length <= hay.Length; i++)
+        {
+            bool ok = true;
+            for (int j = 0; j < needle.Length; j++) if (hay[i + j] != needle[j]) { ok = false; break; }
+            if (ok) return i;
+        }
+        return -1;
+    }
+
+    static bool IntegrityOk()
+    {
+        string path;
+        try { path = Process.GetCurrentProcess().MainModule.FileName; } catch { return false; }
+        byte[] all;
+        try { all = File.ReadAllBytes(path); } catch { return false; }
+
+        int idx = IndexOf(all, SEAL_MAGIC);
+        if (idx < 0 || idx + 72 > all.Length) return false;          // 未封签 = 拒绝
+        string stored;
+        try { stored = Encoding.ASCII.GetString(all, idx + 8, 64); } catch { return false; }
+        if (stored.Any(ch => !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')))) return false;
+
+        // 校验时把 64 字节摘要字段清零再算（与 seal.py 一致，保证自洽）
+        for (int i = idx + 8; i < idx + 72; i++) all[i] = 0x30;
+
+        // PE 区段表：找 .text 的 (rptr, rsize)
+        if (all.Length < 0x40 || all[0] != (byte)'M' || all[1] != (byte)'Z') return false;
+        int e = BitConverter.ToInt32(all, 0x3C);
+        if (e + 24 > all.Length || all[e] != (byte)'P' || all[e + 1] != (byte)'E') return false;
+        int nsec = BitConverter.ToUInt16(all, e + 6);
+        int optsz = BitConverter.ToUInt16(all, e + 20);
+        int shbase = e + 24 + optsz;
+        for (int i = 0; i < nsec; i++)
+        {
+            int o = shbase + i * 40;
+            if (o + 40 > all.Length) break;
+            var name = Encoding.ASCII.GetString(all, o, 8).TrimEnd('\0');
+            if (name != ".text") continue;
+            int rsize = (int)BitConverter.ToUInt32(all, o + 16);
+            int rptr = (int)BitConverter.ToUInt32(all, o + 20);
+            if (rptr + rsize > all.Length || rsize <= 0) return false;
+            using var sha = SHA256.Create();
+            var h = sha.ComputeHash(all, rptr, rsize);
+            var got = BitConverter.ToString(h).Replace("-", "").ToLowerInvariant();
+            return got == stored;
+        }
+        return false;
+    }
+}
