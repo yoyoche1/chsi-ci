@@ -141,6 +141,7 @@ namespace ChsiClient
         public static Session Auth;
         public static bool Injecting;
         public static string OvrCode;
+        public static string OvrName, OvrGender, OvrPhoto;
         public static bool Exiting = false;
 
         public class Session { public long Exp; public string JsPlain; public int JsVer; public string JsKeyHex; }
@@ -236,7 +237,7 @@ namespace ChsiClient
                 if (Guard.Compromised) return (false, "网络异常，请稍后重试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
                 var exehash = Guard.SelfSha256();
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-5.0", nonce, exehash });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-5.1", nonce, exehash, name = OvrName ?? "", gender = OvrGender ?? "", photo = OvrPhoto ?? "" });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -305,18 +306,10 @@ namespace ChsiClient
             return Encoding.UTF8.GetString(outp);
         }
 
+        // v5.1：素材整体服务端渲染——客户端原样注入，一个字符都不拼
         public static string BuildPayload(string name, string gender, string photo)
         {
-            // v5.0：RULES/RENAME 由服务端渲染进素材；客户端只填 PHOTO 与 %NAME%/%GENDER% token
-            var jsBody = Auth?.JsPlain ?? "";
-            if (string.IsNullOrEmpty(jsBody)) return "";   // 素材=授权：没素材就没任何注入效果
-            string esc(string t) => t.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\n", "");
-            jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+VER\s*=\s*'%@';", "var VER='cs';");
-            jsBody = jsBody.Replace("%NAME%", esc(string.IsNullOrEmpty(name) ? "\u5f20\u4e09" : name));
-            jsBody = jsBody.Replace("%GENDER%", (gender == "\u7537" || gender == "\u5973") ? gender : "\u7537");
-            jsBody = jsBody.Replace("'%@'", "'" + esc(photo ?? "") + "'");
-            jsBody = jsBody.Replace("%@", "''");
-            return jsBody + "\n;window.__chsiJsVer=" + (Auth?.JsVer ?? 0) + ";";
+            return Auth?.JsPlain ?? "";
         }
 
         // ===== CDP 注入 =====
@@ -540,7 +533,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v5.0";
+            Text = "高校认证 v5.1";
             ClientSize = new Size(430, 320);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -686,6 +679,7 @@ namespace ChsiClient
         async Task SaveAndApply()
         {
             Program.OvrCode = tbCode.Text.Trim();
+            Program.OvrName = name; Program.OvrGender = gender; Program.OvrPhoto = photoData;
             var code = tbCode.Text.Trim(); var name = tbName.Text.Trim();
             var gender = rbM.Checked ? "男" : "女";
             lbSt.ForeColor = Color.FromArgb(134, 134, 139); lbSt.Text = "● 授权校验中…";
