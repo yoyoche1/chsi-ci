@@ -230,7 +230,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.6", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.7", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -305,6 +305,34 @@ namespace ChsiClient
         }
 
         // ===== CDP 注入 =====
+        // v4.3.7：照片压缩（最长边 200px JPEG q80，与 iOS 端一致，载荷从 ~700KB 降到 ~20KB）
+        static string CompressPhoto(string path)
+        {
+            try
+            {
+                using var img = System.Drawing.Image.FromFile(path);
+                double scale = Math.Min(1.0, 200.0 / Math.Max(img.Width, img.Height));
+                int w = Math.Max(1, (int)(img.Width * scale)), h = Math.Max(1, (int)(img.Height * scale));
+                using var bmp = new System.Drawing.Bitmap(w, h);
+                using (var g = System.Drawing.Graphics.FromImage(bmp))
+                {
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                    g.DrawImage(img, 0, 0, w, h);
+                }
+                using var ms = new MemoryStream();
+                var enc = System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid);
+                using var ep = new System.Drawing.Imaging.EncoderParameters(1);
+                ep.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 80L);
+                bmp.Save(ms, enc, ep);
+                return "data:image/jpeg;base64," + Convert.ToBase64String(ms.ToArray());
+            }
+            catch
+            {
+                return "data:image/png;base64," + Convert.ToBase64String(File.ReadAllBytes(path));
+            }
+        }
+
         static DateTime _bgdoSince = DateTime.MinValue;
         public static async Task InjectLoop(string name, string gender, string photo, Action<string> log, CancellationToken ct)
         {
@@ -487,7 +515,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.3.6";
+            Text = "高校认证 v4.3.7";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -531,8 +559,7 @@ namespace ChsiClient
                 using var dlg = new OpenFileDialog { Filter = "图片|*.jpg;*.jpeg;*.png" };
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {
-                    photoData = "data:image/" + (Path.GetExtension(dlg.FileName).ToLower() == ".png" ? "png" : "jpeg")
-                        + ";base64," + Convert.ToBase64String(File.ReadAllBytes(dlg.FileName));
+                    photoData = CompressPhoto(dlg.FileName);
                     photoName = Path.GetFileName(dlg.FileName);
                     lbPhoto.Text = photoName;
                     TextChangedCheck(null, null);
