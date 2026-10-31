@@ -309,8 +309,7 @@ namespace ChsiClient
                     if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
 
                     Dlog("inject -> " + hitUrl[..Math.Min(60, hitUrl.Length)] + " payload=" + payload.Length + "B");
-                    Dlog("payload head: " + payload.Substring(0, Math.Min(200, payload.Length)).Replace("
-", "\n"));
+                    Dlog("payload head: " + payload.Substring(0, Math.Min(200, payload.Length)).Replace("\n", "\\n"));
                     if (await InjectViaCdp(hitWs, payload))
                     {
                         log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)] + "——3 秒后自动退出");
