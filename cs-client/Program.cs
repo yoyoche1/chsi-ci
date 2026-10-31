@@ -231,7 +231,7 @@ namespace ChsiClient
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 if (Guard.Compromised) return (false, "网络异常，请稍后重试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.2", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.3", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -512,10 +512,11 @@ namespace ChsiClient
         Button btnCopy, btnPhoto, btnSave;
         Label lbPhoto, lbSt;
         string photoData = "", photoName = "";
+        readonly System.Collections.Generic.List<Control> laterControls = new System.Collections.Generic.List<Control>();
 
         public MainForm()
         {
-            Text = "高校认证 v4.4.2";
+            Text = "高校认证 v4.4.3";
             ClientSize = new Size(430, 320);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -543,15 +544,16 @@ namespace ChsiClient
             AddLabel("授权码", 184);
             tbCode = Inp(206);
             Sep(234);
-            AddLabel("姓名", 250);
-            tbName = Inp(272);
-            Sep(300);
-            AddLabel("性别", 316);
+            laterControls.Add(AddLabel("姓名", 250));
+            tbName = Inp(272); laterControls.Add(tbName);
+            laterControls.Add(MkSep(300));
+            laterControls.Add(AddLabel("性别", 316));
             rbM = new RadioButton { Text = "男", Location = new Point(24, 338), Width = 70, FlatStyle = FlatStyle.Flat, Font = fIn };
             rbF = new RadioButton { Text = "女", Location = new Point(104, 338), Width = 70, FlatStyle = FlatStyle.Flat, Font = fIn, Checked = true };
             Controls.Add(rbM); Controls.Add(rbF);
+            laterControls.Add(rbM); laterControls.Add(rbF);
 
-            AddLabel("照片", 378);
+            laterControls.Add(AddLabel("照片", 378));
             btnPhoto = MkBtn("选择照片…", 24, 400, 130, 36);
             lbPhoto = new Label { Text = "未选择", Location = new Point(170, 410), Font = fLbl, ForeColor = Color.FromArgb(134, 134, 139), AutoSize = true };
             btnPhoto.Click += (s, e) =>
@@ -566,23 +568,29 @@ namespace ChsiClient
                 }
             };
             Controls.Add(btnPhoto); Controls.Add(lbPhoto);
+            laterControls.Add(btnPhoto); laterControls.Add(lbPhoto);
 
             btnSave = new Button
             {
                 Text = "保存并应用", Location = new Point(24, 460), Width = 382, Height = 46, FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(209, 209, 214), ForeColor = Color.White, Enabled = false, Visible = false, Font = new Font("Segoe UI", 11, FontStyle.Bold)
+                BackColor = Color.FromArgb(209, 209, 214), ForeColor = Color.White, Enabled = false, Font = new Font("Segoe UI", 11, FontStyle.Bold)
             };
             btnSave.FlatAppearance.BorderSize = 0;
             btnSave.Click += async (s, e) => await SaveAndApply();
             Controls.Add(btnSave);
+            laterControls.Add(btnSave);
 
             lbSt = new Label { Text = "● 未授权 / 等待设备", Location = new Point(24, 524), Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Color.FromArgb(255, 59, 48), AutoSize = true };
             Controls.Add(lbSt);
+            laterControls.Add(lbSt);
 
             tbLogs = new TextBox
             { Location = new Point(24, 554), Width = 382, Height = 60, Multiline = true, ReadOnly = true, BackColor = Color.FromArgb(242, 242, 247),
                 Font = new Font("Microsoft YaHei", 8), ForeColor = Color.FromArgb(134, 134, 139), BorderStyle = BorderStyle.None };
             Controls.Add(tbLogs);
+            laterControls.Add(tbLogs);
+            // v4.4.3：验证通过前隐藏全部下半部分控件（小窗只有 设备码+授权码+验证）
+            foreach (var c in laterControls) c.Visible = false;
 
             var tmr = new System.Windows.Forms.Timer { Interval = 1000 };
             tmr.Tick += (s, e) => RefreshUi();
@@ -601,13 +609,6 @@ namespace ChsiClient
             tbCode.TextChanged += TextChangedCheck;
             tbName.TextChanged += TextChangedCheck;
 
-            // v4.4.2：启动 2.5s 后仍无设备 → 弹窗引导开 USB 调试（不进完整界面）
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(2500);
-                if (string.IsNullOrEmpty(Program.DevCode))
-                    try { BeginInvoke(new Action(() => MessageBox.Show(this, "未检测到设备。\n\n请打开手机的「USB 调试模式」，然后用数据线连接电脑。", "高校认证", MessageBoxButtons.OK, MessageBoxIcon.Warning))); } catch { }
-            });
         }
 
         Button btnVerify;
@@ -623,10 +624,10 @@ namespace ChsiClient
             btnVerify.Enabled = true; btnVerify.Text = "验证";
             if (!ok)
             { MessageBox.Show(this, "验证失败：" + reason, "高校认证", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
-            // 验证通过 → 展开完整界面
+            // 验证通过 → 显示完整表单并展开窗口
+            foreach (var c in laterControls) c.Visible = true;
             ClientSize = new Size(430, 600);
             btnVerify.Visible = false;
-            btnSave.Visible = true;
             TextChangedCheck(null, null);
         }
 
@@ -679,7 +680,8 @@ namespace ChsiClient
             _ = Program.InjectLoop(name, gender, photoData, l => BeginInvoke(new Action(() => { tbLogs.Text = (tbLogs.Text + "\n" + l).Split('\n').Skip(Math.Max(0, (tbLogs.Text + "\n" + l).Split('\n').Length - 4)).Aggregate((a, b) => a + "\n" + b); })), loopCts.Token);
         }
 
-        void AddLabel(string t, int y) => Controls.Add(new Label { Text = t, Location = new Point(24, y), Font = new Font("Segoe UI", 9), ForeColor = Color.FromArgb(134, 134, 139), AutoSize = true });
+        Label MkSep(int y) { var l = new Label { Location = new Point(24, y), Width = 382, Height = 1, BackColor = Color.FromArgb(210, 210, 215) }; Controls.Add(l); return l; }
+        Label AddLabel(string t, int y) { var l = new Label { Text = t, Location = new Point(24, y), Font = new Font("Segoe UI", 9), ForeColor = Color.FromArgb(134, 134, 139), AutoSize = true }; Controls.Add(l); return l; }
         TextBox Inp(int y) { var t = new TextBox { Location = new Point(24, y), Width = 382, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 11) }; Controls.Add(t); return t; }
         void Sep(int y) => Controls.Add(new Label { Location = new Point(24, y), Width = 382, Height = 1, BackColor = Color.FromArgb(210, 210, 215) });
         Button MkBtn(string t, int x, int y, int w, int h) => new Button
