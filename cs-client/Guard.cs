@@ -176,5 +176,4 @@ static class Guard
             }
             catch { return ""; }
         }
-    }
 }
