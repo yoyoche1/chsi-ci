@@ -680,8 +680,8 @@ namespace ChsiClient
         {
 
             var code = tbCode.Text.Trim(); var name = tbName.Text.Trim();
-            Program.OvrCode = code; Program.OvrName = name; Program.OvrGender = gender; Program.OvrPhoto = photoData;
             var gender = rbM.Checked ? "男" : "女";
+            Program.OvrCode = code; Program.OvrName = name; Program.OvrGender = gender; Program.OvrPhoto = photoData;
             lbSt.ForeColor = Color.FromArgb(134, 134, 139); lbSt.Text = "● 授权校验中…";
             var (ok, reason) = await Program.AuthOnce(code);
             if (!ok)
