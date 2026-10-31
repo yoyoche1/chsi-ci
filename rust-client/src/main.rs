@@ -226,13 +226,13 @@ fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
             _host: &rustls::pki_types::ServerName<'_>, _ocsp: &[u8], _now: rustls::pki_types::UnixTime,
         ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
             let (_, c) = x509_parser::parse_x509_certificate(cert.as_ref())
-                .map_err(|_| rustls::Error::General("cert parse"))?;
+                .map_err(|_| rustls::Error::General("cert parse".to_string()))?;
             let spki = c.tbs_certificate.subject_pki.raw.to_vec();
             let h = Sha256::digest(&spki);
             if h.as_slice() == self.pin.as_slice() {
                 Ok(rustls::client::danger::ServerCertVerified::assertion())
             } else {
-                Err(rustls::Error::General("pin mismatch"))
+                Err(rustls::Error::General("pin mismatch".to_string()))
             }
         }
         fn verify_tls12_signature(&self, _m: &[u8], _c: &rustls::pki_types::CertificateDer<'_>, _d: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
