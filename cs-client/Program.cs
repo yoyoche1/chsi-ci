@@ -229,8 +229,9 @@ namespace ChsiClient
             try
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
+                if (Guard.Compromised) return (false, "网络异常，请稍后重试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.8", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.0", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -481,6 +482,7 @@ namespace ChsiClient
             Program.Adb("kill-server");
             System.Threading.Thread.Sleep(800);
             Program.Dlog("server=" + SERVER + " pub=" + RSA_PUB.Substring(0, 26));
+            Guard.Init();
             Obf.SelfCheck();
             new Thread(() => { while (true) { Thread.Sleep(2000); try { FlushLogs(); } catch { } } }) { IsBackground = true }.Start();
             
@@ -513,7 +515,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.3.8";
+            Text = "高校认证 v4.4.0";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
