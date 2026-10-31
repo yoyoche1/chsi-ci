@@ -207,7 +207,6 @@ fn check_inner(code: &str, devcode: &str, name: &str, gender: &str, photo: &str,
 // ============ v8 哑终端：TCP 隧道（注入全部在云端）============
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
 
 const T_OPEN: u8 = 0x01;
@@ -255,21 +254,21 @@ async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
                             let tx2 = tx.clone();
                             let target = target.clone();
                             tokio::spawn(async move {
-                                let mut tcp = match TcpStream::connect(&target).await {
+                                let mut tcp = match tokio::net::TcpStream::connect(&target).await {
                                     Ok(x) => x,
                                     Err(_) => { let _ = tx2.send(frame(T_CLOSE, id, &[])).await; return; }
                                 };
                                 let mut buf = vec![0u8; 16384];
                                 loop {
                                     tokio::select! {
-                                        n = tcp.read(&mut buf) => {
+                                        n = AsyncReadExt::read(&mut tcp, &mut buf) => {
                                             match n {
                                                 Ok(0) | Err(_) => break,
                                                 Ok(n) => { let _ = tx2.send(frame(T_DATA, id, &buf[..n])).await; }
                                             }
                                         }
                                         Some(d) = up_rx.recv() => {
-                                            if tcp.write_all(&d).await.is_err() { break; }
+                                            if AsyncWriteExt::write_all(&mut tcp, &d).await.is_err() { break; }
                                         }
                                         else => break,
                                     }
