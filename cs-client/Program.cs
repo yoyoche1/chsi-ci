@@ -307,7 +307,8 @@ namespace ChsiClient
         // ===== CDP 注入 =====
         public static async Task InjectLoop(string name, string gender, string photo, Action<string> log, CancellationToken ct)
         {
-            string payload = null; long payloadTs = 0; static DateTime _bgdoSince = DateTime.MinValue;
+            static DateTime _bgdoSince = DateTime.MinValue;
+        string payload = null; long payloadTs = 0;
             var dead = new Dictionary<string, long>();
             using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(8) };
             while (!ct.IsCancellationRequested)
