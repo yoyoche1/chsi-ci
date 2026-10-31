@@ -229,7 +229,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.2", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.3", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -441,7 +441,7 @@ namespace ChsiClient
                     if (dev != null)
                     {
                         var fp = DeviceFingerprint(dev);
-                        if (fp != null) { var used = LastUsed(); if (used != null) fp = Rotate(used); DevCode = fp; Dlog("devcode ready " + DevCode); break; }
+                        if (fp != null) { var used = LastUsed(); if (used != null && used.Length == 16) fp = Rotate(used); DevCode = fp; Dlog("devcode ready " + DevCode); break; }
                     }
                     Thread.Sleep(3000);
                 }
@@ -460,7 +460,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.3.2";
+            Text = "高校认证 v4.3.3";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
