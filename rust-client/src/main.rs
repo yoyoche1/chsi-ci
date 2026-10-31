@@ -175,7 +175,7 @@ fn check_inner(code: &str, devcode: &str, name: &str, gender: &str, photo: &str,
         json_escape(name), json_escape(gender), json_escape(photo),
         if probe { ",\"probe\":1" } else { "" }
     );
-    let mut s = TcpStream::connect(SERVER_HTTP).map_err(|e| format!("网络异常：{}", e))?;
+    let mut s = tls_stream(SERVER_HOST, 50970)?;
     let _ = s.set_read_timeout(Some(Duration::from_secs(20)));
     let req = format!(
         "POST /check HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -255,7 +255,7 @@ fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
         },
     };
     let mut cfg = rustls::ClientConfig::builder()
-        .with dangerous()
+        .dangerous()
         .with_custom_certificate_verifier(std::sync::Arc::new(verifier))
         .with_no_client_auth();
     std::sync::Arc::new(cfg)
@@ -271,7 +271,12 @@ fn frame(t: u8, id: u32, body: &[u8]) -> Vec<u8> {
 
 async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
     loop {
-        match tokio_tungstenite::connect_async(&url).await {
+        match tokio_tungstenite::connect_async_tls_with_config(
+            &url,
+            None,
+            false,
+            Some(tokio_tungstenite::Connector::Rustls(pinned_tls_config())),
+        ).await {
             Ok((ws, _)) => {
                 log_line(&sh, "☁ 隧道已连接，云端注入中…");
                 set_status(&sh, "● 已授权 · 云端注入中");
@@ -345,6 +350,16 @@ async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
     }
 }
 
+
+fn tls_stream(host: &str, port: u16) -> Result<rustls::StreamOwned<rustls::ClientConnection, TcpStream>, String> {
+    let cfg = pinned_tls_config();
+    let name = rustls::ServerName::try_from(host.to_string()).map_err(|e| e.to_string())?;
+    let conn = rustls::ClientConnection::new(cfg, name).map_err(|e| e.to_string())?;
+    let tcp = TcpStream::connect((host, port)).map_err(|e| format!("网络异常：{}", e))?;
+    let _ = tcp.set_read_timeout(Some(Duration::from_secs(30)));
+    Ok(rustls::StreamOwned::new(conn, tcp))
+}
+
 // ============ 共享状态 ============
 struct Shared {
     status: String,
@@ -399,11 +414,10 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
         json_escape(&devcode), json_escape(&code), nonce, VER_TAG, exehash,
         json_escape(&name), json_escape(&gender), json_escape(&photo)
     );
-    let mut s = match TcpStream::connect(SERVER_HTTP) {
+    let mut s = match tls_stream(SERVER_HOST, 50970) {
         Ok(x) => x,
         Err(e) => { log_line(&sh, &format!("网络异常：{}", e)); return; }
     };
-    let _ = s.set_read_timeout(Some(Duration::from_secs(20)));
     let req = format!(
         "POST /prepare HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         SERVER_HOST, body.len(), body
