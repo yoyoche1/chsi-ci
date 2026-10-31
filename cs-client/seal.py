@@ -42,7 +42,8 @@ def main():
     h = hashlib.sha256(bytes(d[rptr:rptr + rsize])).hexdigest()
     d[idx + 8:idx + 72] = h.encode("ascii")
     open(src, "wb").write(bytes(d))
-    print("sealed: %s  .text=%dB  sha256=%s" % (src, rsize, h))
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    print("sealed: .text=%dB sha256=%s" % (rsize, h))
 
 
 if __name__ == "__main__":
