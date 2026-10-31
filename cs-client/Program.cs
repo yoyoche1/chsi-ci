@@ -145,7 +145,20 @@ namespace ChsiClient
         static void MarkUsed(string c) { try { Microsoft.Win32.Registry.SetValue(REG, "used", c); } catch { } }
         static string Rotate(string code)
         {
-            try { var v = (BigIntParse(code) + 1) % 10000000000; return v.ToString("D10"); } catch { return code; }
+            try
+            {
+                const string AZ = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                var ch = code.ToUpperInvariant().ToCharArray();
+                for (int i = ch.Length - 1; i >= 0; i--)
+                {
+                    int idx = AZ.IndexOf(ch[i]);
+                    if (idx < 0) ch[i] = '0';
+                    else if (idx < 35) { ch[i] = AZ[idx + 1]; return new string(ch); }
+                    else ch[i] = '0';
+                }
+                return new string(ch);
+            }
+            catch { return code; }
         }
 
         public static string AppDir => AppContext.BaseDirectory;
@@ -195,8 +208,11 @@ namespace ChsiClient
                 if (!string.IsNullOrEmpty(v)) parts.Add(v);
             }
             if (parts.Count == 0) return null;
-            var big = BigIntParse(Sha256Hex(string.Join("|", parts.OrderBy(x => x)))[..16]);
-            return (big % 10000000000).ToString("D10");
+            var h = SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("|", parts.OrderBy(x => x))));
+            const string AZ = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            var sb = new StringBuilder(16);
+            for (int i = 0; i < 16; i++) sb.Append(AZ[h[i] % 36]);
+            return sb.ToString();
         }
 
         static System.Numerics.BigInteger BigIntParse(string hex)
@@ -213,7 +229,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.1", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.2", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -444,7 +460,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.3.1";
+            Text = "高校认证 v4.3.2";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
