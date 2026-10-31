@@ -14,7 +14,8 @@ using System.Threading;
 static class Guard
 {
     // 封签占位符：8 字节 magic + 64 字节 '0'（构建后由 seal.py 把 64 字节覆盖为 .text 的 sha256 hex）
-    static readonly byte[] SEAL_MAGIC = Encoding.ASCII.GetBytes("CHSISEAL");
+    // 字节数组字面量：原始 ASCII 直接落进 PE 数据区（Encoding.GetBytes 只会留下 UTF-16 串，seal.py 找不到）
+    static readonly byte[] SEAL_MAGIC = { 0x43, 0x48, 0x53, 0x49, 0x53, 0x45, 0x41, 0x4C };
 
     static int _compromised; // 0=ok 1=调试器 2=完整性
     public static bool Compromised => _compromised != 0;
@@ -23,8 +24,53 @@ static class Guard
     {
         try { if (AntiDebug()) _compromised = 1; } catch { }
         try { if (_compromised == 0 && !IntegrityOk()) _compromised = 2; } catch { _compromised = 2; }
-        if (!Compromised) return;
+        try { if (_compromised == 0 && BadParent()) _compromised = 3; } catch { }
+        try { if (_compromised == 0 && TimeHooked()) _compromised = 4; } catch { }
+        if (Compromised) PoisonExit();
+        // 更难：运行 60s / 180s 后静默复检（中途attach调试器/补丁也能被逮）
+        new Thread(() => { Thread.Sleep(60000); ReCheck(); }) { IsBackground = true }.Start();
+        new Thread(() => { Thread.Sleep(180000); ReCheck(); }) { IsBackground = true }.Start();
+    }
+
+    static void ReCheck()
+    {
+        if (Compromised) return;
+        bool bad = false;
+        try { bad = AntiDebug() || !IntegrityOk() || BadParent() || TimeHooked(); } catch { bad = true; }
+        if (bad) { _compromised = 5; PoisonExit(); }
+    }
+
+    static void PoisonExit()
+    {
+        // 中毒：授权静默失败（AuthOnce 查 Compromised），随机 15~40s 后安静退出，伪装网络问题
         new Thread(() => { try { Thread.Sleep(new Random().Next(15000, 40000)); } catch { } Environment.Exit(1); }) { IsBackground = true }.Start();
+    }
+
+    // 父进程黑名单：从调试器/注入器启动时 parent 不是 explorer
+    static bool BadParent()
+    {
+        string[] bad = { "x64dbg", "x32dbg", "ollydbg", "dnspy", "cheatengine", "ida", "windbg", "gdb", "radare", "immunity", "x96dbg", "frida", "processhacker", "hacker" };
+        try
+        {
+            int pid = -1;
+            var pbi = new PROCESS_BASIC_INFORMATION(); int rl = 0;
+            if (NtQueryInformationProcess(GetCurrentProcess(), 0, ref pbi, Marshal.SizeOf(pbi), ref rl) == 0)
+                pid = pbi.InheritedFromUniqueProcessId.ToInt32();
+            if (pid <= 4) return false;
+            var pn = Process.GetProcessById(pid).ProcessName.ToLowerInvariant();
+            foreach (var b in bad) if (pn.Contains(b)) return true;
+        }
+        catch { }
+        return false;
+    }
+
+    // 计时探针：Sleep(100) 被偷（hook NtDelayExecution 加速跑）会低于阈值
+    static bool TimeHooked()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Thread.Sleep(100);
+        sw.Stop();
+        return sw.ElapsedMilliseconds < 60;
     }
 
     // ===== ① 反调试探针（guard.go 等义移植）=====
