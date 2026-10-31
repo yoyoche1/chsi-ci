@@ -124,7 +124,7 @@ namespace ChsiClient
         public static string SERVER => Obf.S(0,new byte[]{124,93,54,15,12,213,191,59,186,183,79,141,3,3,180,9,44,150,233,36,9,255,210,166,56});
         public static string[] SERVERS => new[] { Obf.S(5, new byte[]{46,132,29,193,96,89,85,116,29,2,22,69,4,116,43,209,66,18,233,9,95,122,219,208,36,134,13,102,238,88,56,230,138,166,49,237,216,115,199,8,19,0,2,241,184,96,33,9,94,22,225,187,83}) };
         // v4.4.7：构建密钥（每版轮换）——jsenc 解密密钥派生源，响应不再明文带 jskey
-        public static string BUILD_SECRET => Obf.S(9, new byte[]{186,150,142,59,167,129,231,121,31,89,115,43,236,40,47,209,7,176,74,117,58,0,122,107,253,158,243,180,32,162,235,158});
+        public static string BUILD_SECRET => Obf.S(9, new byte[]{234,90,58,236,158,6,159,229,124,101,205,172,179,160,188,71,28,194,41,213,232,0,233,173,247,122,207,210,128,138,175,122});
         public const string RSA_PUB = "-----BEGIN PUBLIC KEY-----\n"
             + "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjGJcKQwrJpvtjZyx9TAK\n"
             + "vyrIgQcXEWmCtqpBIV/OHwM1zndMw2JNxu6mhTFWfWBW2/4ZtXqtrVqEQ2H4utn9\n"
