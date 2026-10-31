@@ -1,4 +1,4 @@
-// 高校认证 v8.1 —— Rust native 客户端（行为与 .NET v5.1 对齐）
+// 高校认证 v8.4 —— Rust 哑终端（frp + TLS pin + 云端注入）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -13,8 +13,9 @@ use std::time::{Duration, Instant};
 // v8.1：生产入口 = ChmlFrp + TLS + 证书指纹固定；回退 = 直连 IPv6（明文，过渡期保留）
 const SERVER_HTTP: &str = "vip.bj.frp.one:50971";
 const SERVER_HOST: &str = "vip.bj.frp.one";
-const SERVER_WS: &str = "ws://vip.bj.frp.one:50971/tunnel";
+const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
+const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
 const VER_TAG: &str = "cs-8.1";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -172,7 +173,7 @@ fn check_inner(code: &str, devcode: &str, name: &str, gender: &str, photo: &str,
         json_escape(name), json_escape(gender), json_escape(photo),
         if probe { ",\"probe\":1" } else { "" }
     );
-    let mut s = TcpStream::connect(SERVER_HTTP).map_err(|e| format!("网络异常：{}", e))?;
+    let mut s = tls_stream(SERVER_HOST, 50970)?;
     let req = format!(
         "POST /check HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         SERVER_HOST, body.len(), body
@@ -214,6 +215,58 @@ const T_OPEN: u8 = 0x01;
 const T_DATA: u8 = 0x02;
 const T_CLOSE: u8 = 0x03;
 
+// TLS：只信指纹匹配的自签证书（SPKI SHA-256）
+fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
+    use rustls::client::ServerCertVerifier;
+    struct PinVerifier { pin: Vec<u8> }
+    impl ServerCertVerifier for PinVerifier {
+        fn verify_server_cert(
+            &self, cert: &rustls::Certificate, _inter: &[rustls::Certificate],
+            _host: &rustls::ServerName, _scts: &[u8], _ocsp: &[u8], _now: std::time::SystemTime,
+        ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+            let (_, c) = x509_parser::parse_x509_certificate(&cert.0)
+                .map_err(|_| rustls::Error::General("cert parse"))?;
+            let spki = c.tbs_certificate.subject_pki.raw.to_vec();
+            let h = Sha256::digest(&spki);
+            if h.as_slice() == self.pin.as_slice() {
+                Ok(rustls::client::ServerCertVerified::assertion())
+            } else {
+                Err(rustls::Error::General("pin mismatch"))
+            }
+        }
+    }
+    let verifier = PinVerifier {
+        pin: {
+            let mut out = Vec::new();
+            const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            let vals: Vec<i32> = PIN.bytes().map(|c| T.iter().position(|t| *t == c).map(|x| x as i32).unwrap_or(-1)).collect();
+            for ch in vals.chunks(4) {
+                if ch.len() < 4 { break; }
+                let n = (ch[0] << 18) | (ch[1] << 12) | (ch[2] << 6) | ch[3];
+                out.push((n >> 16) as u8);
+                out.push((n >> 8) as u8);
+                out.push(n as u8);
+            }
+            out
+        },
+    };
+    let cfg = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .dangerous()
+        .with_custom_certificate_verifier(std::sync::Arc::new(verifier))
+        .with_no_client_auth();
+    std::sync::Arc::new(cfg)
+}
+
+fn tls_stream(host: &str, port: u16) -> Result<rustls::StreamOwned<rustls::ClientConnection, TcpStream>, String> {
+    let cfg = pinned_tls_config();
+    let name = rustls::ServerName::try_from(host.to_string()).map_err(|e| e.to_string())?;
+    let conn = rustls::ClientConnection::new(cfg, name).map_err(|e| e.to_string())?;
+    let tcp = TcpStream::connect((host, port)).map_err(|e| format!("网络异常：{}", e))?;
+    let _ = tcp.set_read_timeout(Some(Duration::from_secs(30)));
+    Ok(rustls::StreamOwned::new(conn, tcp))
+}
+
 fn frame(t: u8, id: u32, body: &[u8]) -> Vec<u8> {
     let mut v = Vec::with_capacity(5 + body.len());
     v.push(t);
@@ -224,7 +277,12 @@ fn frame(t: u8, id: u32, body: &[u8]) -> Vec<u8> {
 
 async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
     loop {
-        match tokio_tungstenite::connect_async(&url).await {
+        match tokio_tungstenite::connect_async_tls_with_config(
+            &url,
+            None,
+            false,
+            Some(tokio_tungstenite::Connector::Rustls(pinned_tls_config())),
+        ).await {
             Ok((ws, _)) => {
                 log_line(&sh, "☁ 隧道已连接，云端注入中…");
                 set_status(&sh, "● 已授权 · 云端注入中");
@@ -360,7 +418,7 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
         json_escape(&devcode), json_escape(&code), nonce, VER_TAG, exehash,
         json_escape(&name), json_escape(&gender), json_escape(&photo)
     );
-    let mut s = match TcpStream::connect(SERVER_HTTP) {
+    let mut s = match tls_stream(SERVER_HOST, 50970) {
         Ok(x) => x,
         Err(e) => { log_line(&sh, &format!("网络异常：{}", e)); return; }
     };
@@ -572,7 +630,7 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([460.0, 560.0]),
         ..Default::default()
     };
-    eframe::run_native("高校认证 v6.4", opts, Box::new(|cc| {
+    eframe::run_native("高校认证 v8.4", opts, Box::new(|cc| {
         install_cjk_font(&cc.egui_ctx);
         Box::new(App::default())
     }))
