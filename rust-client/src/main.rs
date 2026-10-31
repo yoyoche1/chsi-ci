@@ -222,7 +222,7 @@ fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
     impl ServerCertVerifier for PinVerifier {
         fn verify_server_cert(
             &self, cert: &rustls::Certificate, _inter: &[rustls::Certificate],
-            _host: &rustls::ServerName, _scts: &[u8], _ocsp: &[u8], _now: std::time::SystemTime,
+            _host: &rustls::ServerName, _ocsp: &[u8], _now: std::time::SystemTime,
         ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
             let (_, c) = x509_parser::parse_x509_certificate(&cert.0)
                 .map_err(|_| rustls::Error::General("cert parse"))?;
