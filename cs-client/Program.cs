@@ -184,7 +184,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.6", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.7", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -249,11 +249,12 @@ namespace ChsiClient
             sb.Append(string.Join(",", f.Select(kv =>
                 $"['{kv.Key.Replace("'", "")}','{kv.Value.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\n", "")}']")));
             sb.Append($"];var RENAME=[];var PHOTO='{photo}';");
-            var jsBody = (Auth?.JsPlain ?? "")
-                .Replace("var VER = '%@';", "var VER = 'cs';")
-                .Replace("var RULES = %@;", "")
-                .Replace("var RENAME = %@;", "")
-                .Replace("var PHOTO = '%@';", "");
+            var jsBody = Auth?.JsPlain ?? "";
+            jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+VER\s*=\s*'%@';", "var VER='cs';");
+            jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+RULES\s*=\s*%@;", "");
+            jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+RENAME\s*=\s*%@;", "");
+            jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+PHOTO\s*=\s*'%@';", "");
+            jsBody = jsBody.Replace("%@", "''");
             return sb + "\n" + jsBody;
         }
 
@@ -308,6 +309,8 @@ namespace ChsiClient
                     if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
 
                     Dlog("inject -> " + hitUrl[..Math.Min(60, hitUrl.Length)] + " payload=" + payload.Length + "B");
+                    Dlog("payload head: " + payload.Substring(0, Math.Min(200, payload.Length)).Replace("
+", "\n"));
                     if (await InjectViaCdp(hitWs, payload))
                     {
                         log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)] + "——3 秒后自动退出");
@@ -404,7 +407,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.2.6";
+            Text = "高校认证 v4.2.7";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
