@@ -139,7 +139,7 @@ namespace ChsiClient
         public static Session Auth;
         public static bool Exiting = false;
 
-        public class Session { public long Exp; public string JsPlain; }
+        public class Session { public long Exp; public string JsPlain; public int JsVer; }
 
         const string REG = @"HKEY_CURRENT_USER\Software\ChsiAuth";
         static string LastUsed() => Microsoft.Win32.Registry.GetValue(REG, "used", null) as string;
@@ -261,7 +261,7 @@ namespace ChsiClient
                 {
                     jsPlain = JsDecrypt(je.GetString(), jskey);
                 }
-                Auth = new Session { Exp = exp, JsPlain = jsPlain }; Dlog("auth ok exp=" + exp);
+                Auth = new Session { Exp = exp, JsPlain = jsPlain, JsVer = j.TryGetProperty("jsver", out var jv) ? jv.GetInt32() : 0 }; Dlog("auth ok exp=" + exp + " jsver=" + Auth.JsVer);
                 return (true, "ok");
             }
             catch (Exception ex) { Dlog("auth exc: " + ex.Message); return (false, "网络/异常：" + ex.Message); }
