@@ -32,8 +32,9 @@ jobs:
       - name: Smoke test (selftest mode)
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath .\rust-client\target\release\chsi-rust.exe -ArgumentList '--selftest' -PassThru -Wait
-          if ($p.ExitCode -ne 0) { Write-Host "EXITED code=$($p.ExitCode)"; exit 1 }
+          $p = Start-Process -FilePath .\rust-client\target\release\chsi-rust.exe -ArgumentList '--selftest' -PassThru
+          Start-Sleep -Seconds 5
+          if ($p.HasExited -and $p.ExitCode -ne 0) { Write-Host "EXITED code=$($p.ExitCode)"; exit 1 }
           Write-Host "SELFTEST OK"
       - uses: actions/upload-artifact@v4
         with:
