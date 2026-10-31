@@ -299,7 +299,7 @@ async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
                 let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
                 let writer = tokio::spawn(async move {
                     while let Some(v) = rx.recv().await {
-                        if sink.send(Message::Binary(v)).await.is_err() { break; }
+                        if sink.send(Message::Binary(v.into())).await.is_err() { break; }
                     }
                 });
                 let mut streams: std::collections::HashMap<u32, tokio::sync::mpsc::Sender<Vec<u8>>> =
