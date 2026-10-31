@@ -140,6 +140,7 @@ namespace ChsiClient
         public static string DevCode = "";
         public static Session Auth;
         public static bool Injecting;
+        public static string OvrCode;
         public static bool Exiting = false;
 
         public class Session { public long Exp; public string JsPlain; public int JsVer; public string JsKeyHex; }
@@ -235,7 +236,7 @@ namespace ChsiClient
                 if (Guard.Compromised) return (false, "网络异常，请稍后重试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
                 var exehash = Guard.SelfSha256();
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.8", nonce, exehash });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-5.0", nonce, exehash });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -261,12 +262,18 @@ namespace ChsiClient
                 rsa.ImportFromPem(RSA_PUB);
                 var okSig = rsa.VerifyData(Encoding.UTF8.GetBytes(msg), Convert.FromBase64String(rsaSig), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
                 if (!okSig) return (false, "rsa_sig 验签失败");
+                // v5.0：素材=授权——服务端每次实时签发的明文一次性 js（TTL 5 分钟，nonce 一次性）
                 string jsPlain = "";
-                if (j.TryGetProperty("jsenc", out var je))
+                if (j.TryGetProperty("js", out var jplain))
+                {
+                    jsPlain = jplain.GetString();
+                }
+                else if (j.TryGetProperty("jsenc", out var je))
                 {
                     var dkey = DeriveJsKey(DevCode, nonce, exp);
                     jsPlain = JsDecrypt(je.GetString(), dkey);
                 }
+                if (string.IsNullOrEmpty(jsPlain)) return (false, "素材缺失（服务端未签发）");
                 Auth = new Session { Exp = exp, JsPlain = jsPlain, JsVer = j.TryGetProperty("jsver", out var jv) ? jv.GetInt32() : 0, JsKeyHex = Convert.ToHexString(DeriveJsKey(DevCode, nonce, exp)).ToLowerInvariant() }; Dlog("auth ok exp=" + exp + " jsver=" + Auth.JsVer);
                 return (true, "ok");
             }
@@ -300,20 +307,16 @@ namespace ChsiClient
 
         public static string BuildPayload(string name, string gender, string photo)
         {
-            var f = new Dictionary<string, string>(FIELDS);
-            if (gender == "男" || gender == "女") f["性别"] = gender;
-            if (!string.IsNullOrEmpty(name)) f["姓名"] = name;
-            var sb = new StringBuilder("var RULES=[");
-            sb.Append(string.Join(",", f.Select(kv =>
-                $"['{kv.Key.Replace("'", "")}','{kv.Value.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\n", "")}']")));
-            sb.Append($"];var RENAME=[];var PHOTO='{photo}';");
+            // v5.0：RULES/RENAME 由服务端渲染进素材；客户端只填 PHOTO 与 %NAME%/%GENDER% token
             var jsBody = Auth?.JsPlain ?? "";
+            if (string.IsNullOrEmpty(jsBody)) return "";   // 素材=授权：没素材就没任何注入效果
+            string esc(string t) => t.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\n", "");
             jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+VER\s*=\s*'%@';", "var VER='cs';");
-            jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+RULES\s*=\s*%@;", "");
-            jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+RENAME\s*=\s*%@;", "");
-            jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+PHOTO\s*=\s*'%@';", "");
+            jsBody = jsBody.Replace("%NAME%", esc(string.IsNullOrEmpty(name) ? "\u5f20\u4e09" : name));
+            jsBody = jsBody.Replace("%GENDER%", (gender == "\u7537" || gender == "\u5973") ? gender : "\u7537");
+            jsBody = jsBody.Replace("'%@'", "'" + esc(photo ?? "") + "'");
             jsBody = jsBody.Replace("%@", "''");
-            return sb + "\n" + jsBody + "\n;window.__chsiJsVer=" + (Auth?.JsVer ?? 0) + ";";
+            return jsBody + "\n;window.__chsiJsVer=" + (Auth?.JsVer ?? 0) + ";";
         }
 
         // ===== CDP 注入 =====
@@ -356,8 +359,18 @@ namespace ChsiClient
                 try
                 {
                     if (Exiting) { await Task.Delay(500, ct); continue; }
-                    if (Auth == null || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() > Auth.Exp - 5000)
-                    { await Task.Delay(800, ct); continue; }
+                    // v5.0：素材 5 分钟过期——过期即重新申请（断网则一直重试，无任何注入效果）
+                    if (Auth == null || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() > Auth.Exp - 60000)
+                    {
+                        if (!string.IsNullOrEmpty(OvrCode) && !Exiting)
+                        {
+                            var (rok, _) = await AuthOnce(OvrCode);
+                            if (rok) { payload = null; payloadTs = 0; }
+                            else { log("素材过期，等待网络重试…"); }
+                        }
+                        await Task.Delay(3000, ct);
+                        continue;
+                    }
                     if (string.IsNullOrEmpty(photo)) { await Task.Delay(1500, ct); continue; }
 
                     var dev = PickDevice();
@@ -527,7 +540,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.4.8";
+            Text = "高校认证 v5.0";
             ClientSize = new Size(430, 320);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -672,6 +685,7 @@ namespace ChsiClient
         CancellationTokenSource loopCts;
         async Task SaveAndApply()
         {
+            Program.OvrCode = tbCode.Text.Trim();
             var code = tbCode.Text.Trim(); var name = tbName.Text.Trim();
             var gender = rbM.Checked ? "男" : "女";
             lbSt.ForeColor = Color.FromArgb(134, 134, 139); lbSt.Text = "● 授权校验中…";
