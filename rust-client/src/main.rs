@@ -218,6 +218,7 @@ const T_CLOSE: u8 = 0x03;
 // TLS：只信指纹匹配的自签证书（SPKI SHA-256，rustls 0.23 API）
 fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
     use rustls::client::danger::ServerCertVerifier;
+    #[derive(Debug)]
     struct PinVerifier { pin: Vec<u8> }
     impl ServerCertVerifier for PinVerifier {
         fn verify_server_cert(
