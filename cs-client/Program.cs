@@ -233,7 +233,7 @@ namespace ChsiClient
                 if (Guard.Compromised) return (false, "网络异常，请稍后重试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
                 var exehash = Guard.SelfSha256();
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.5", nonce, exehash });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.6", nonce, exehash });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -396,7 +396,7 @@ namespace ChsiClient
                         if (hitUrl.Contains("bg.do"))
                         {
                             bgdoCount++;
-                            if (bgdoCount >= 2)
+                            if (bgdoCount >= 1)
                             {
                                 log("全部注入完成（验证码报告页已改写），3 秒后自动退出");
                                 MarkUsed(DevCode);
@@ -518,7 +518,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.4.5";
+            Text = "高校认证 v4.4.6";
             ClientSize = new Size(430, 320);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
