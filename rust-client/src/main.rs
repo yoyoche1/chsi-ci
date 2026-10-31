@@ -16,8 +16,6 @@ const SERVER_HTTP: &str = "vip.bj.frp.one:50970";
 const SERVER_HOST: &str = "vip.bj.frp.one";
 const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
-const SERVER_HOST: &str = "[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787";
-const SERVER_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const VER_TAG: &str = "cs-8.0";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -176,7 +174,6 @@ fn check_inner(code: &str, devcode: &str, name: &str, gender: &str, photo: &str,
         if probe { ",\"probe\":1" } else { "" }
     );
     let mut s = tls_stream(SERVER_HOST, 50970)?;
-    let _ = s.set_read_timeout(Some(Duration::from_secs(20)));
     let req = format!(
         "POST /check HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         SERVER_HOST, body.len(), body
@@ -225,7 +222,7 @@ fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
     impl ServerCertVerifier for PinVerifier {
         fn verify_server_cert(
             &self, cert: &rustls::Certificate, _inter: &[rustls::Certificate],
-            _host: &rustls::ServerName, _sig: &[u8], _now: std::time::SystemTime,
+            _host: &rustls::ServerName, _scts: &[u8], _ocsp: &[u8], _now: std::time::SystemTime,
         ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
             let (_, c) = x509_parser::parse_x509_certificate(&cert.0)
                 .map_err(|_| rustls::Error::General("cert parse"))?;
