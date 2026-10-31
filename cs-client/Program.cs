@@ -184,7 +184,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.5", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.6", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -351,8 +351,8 @@ namespace ChsiClient
                 ws.Options.Proxy = new WebProxy();
                 using var cts = new CancellationTokenSource(8000);
                 await ws.ConnectAsync(new Uri(wsUrl), cts.Token);
-                var msg = JsonSerializer.Serialize(new
-                { id = 1, method = "Runtime.evaluate", parameters = new { expression = expr, returnByValue = false } });
+                var msg = JsonSerializer.Serialize(new Dictionary<string, object>
+                { ["id"] = 1, ["method"] = "Runtime.evaluate", ["params"] = new { expression = expr, returnByValue = false } });
                 var buf = Encoding.UTF8.GetBytes(msg);
                 await ws.SendAsync(buf, WebSocketMessageType.Text, true, cts.Token);
                 var rbuf = new byte[4096];
@@ -404,7 +404,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.2.5";
+            Text = "高校认证 v4.2.6";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
