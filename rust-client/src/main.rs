@@ -1,4 +1,4 @@
-// 高校认证 v6.5 —— Rust native 客户端（行为与 .NET v5.1 对齐）
+// 高校认证 v6.6 —— Rust native 客户端（行为与 .NET v5.1 对齐）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const SERVER: &str = "192.168.1.101:8787";
-const VER_TAG: &str = "cs-6.5";
+const VER_TAG: &str = "cs-6.6";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -488,12 +488,22 @@ impl eframe::App for App {
                 ui.label("照片");
                 ui.horizontal(|ui| {
                     if ui.button("选择照片…").clicked() {
-                        if let Some(p) = rfd_pick() {
-                            if let Ok(bytes) = std::fs::read(&p) {
-                                let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                                let mime = if ext == "png" { "png" } else { "jpeg" };
-                                self.photo = format!("data:image/{};base64,{}", mime, b64(&bytes));
-                                self.photo_name = p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
+                        match rfd_pick() {
+                            Some(p) => match std::fs::read(&p) {
+                                Ok(bytes) => {
+                                    let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                                    let mime = if ext == "png" { "png" } else { "jpeg" };
+                                    self.photo = format!("data:image/{};base64,{}", mime, b64(&bytes));
+                                    self.photo_name = format!("{} ({}KB)", p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default(), bytes.len() / 1024);
+                                    log_line(&self.shared, &format!("已选择照片：{}", self.photo_name));
+                                }
+                                Err(e) => {
+                                    self.photo_name = "读取失败".into();
+                                    log_line(&self.shared, &format!("照片读取失败：{}", e));
+                                }
+                            },
+                            None => {
+                                log_line(&self.shared, "未选择文件（对话框取消或路径解析失败）");
                             }
                         }
                     }
@@ -533,7 +543,7 @@ impl eframe::App for App {
 fn rfd_pick() -> Option<std::path::PathBuf> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let script = "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter='Images|*.jpg;*.jpeg;*.png'; if($d.ShowDialog() -eq 'OK'){Write-Output $d.FileName}";
+    let script = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter='Images|*.jpg;*.jpeg;*.png'; if($d.ShowDialog() -eq 'OK'){Write-Output $d.FileName}";
     let out = Command::new("powershell")
         .args(["-NoProfile", "-STA", "-Command", script])
         .creation_flags(CREATE_NO_WINDOW)
