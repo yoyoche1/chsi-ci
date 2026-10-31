@@ -12,17 +12,32 @@ use std::time::Duration;
 
 // ============ 常量 ============
 const SERVER: &str = "192.168.1.101:8787";
-const VER_TAG: &str = "cs-6.1";
+const VER_TAG: &str = "cs-6.2";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ 工具 ============
-fn adb_bin() -> String {
-    let cand = std::env::current_exe().ok()
-        .and_then(|p| p.parent().map(|d| d.join("adb").join("adb.exe")));
-    match cand {
-        Some(p) if p.exists() => p.to_string_lossy().to_string(),
-        _ => "adb".into(),
+// v6.2：adb 内置——首次运行时解到 %LOCALAPPDATA%\chsi\adb\，之后复用
+static ADB_EXE: &[u8] = include_bytes!("../assets/adb.exe");
+static ADB_DLL1: &[u8] = include_bytes!("../assets/AdbWinApi.dll");
+static ADB_DLL2: &[u8] = include_bytes!("../assets/AdbWinUsbApi.dll");
+
+fn ensure_adb() -> String {
+    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
+    let dir = std::path::Path::new(&base).join("chsi").join("adb");
+    let exe = dir.join("adb.exe");
+    let need = !exe.exists()
+        || std::fs::metadata(&exe).map(|m| m.len()).unwrap_or(0) != ADB_EXE.len() as u64;
+    if need {
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(&exe, ADB_EXE);
+        let _ = std::fs::write(dir.join("AdbWinApi.dll"), ADB_DLL1);
+        let _ = std::fs::write(dir.join("AdbWinUsbApi.dll"), ADB_DLL2);
     }
+    exe.to_string_lossy().to_string()
+}
+
+fn adb_bin() -> String {
+    ensure_adb()
 }
 
 #[cfg(windows)]
@@ -438,5 +453,5 @@ fn main() -> eframe::Result<()> {
             .with_resizable(false),
         ..Default::default()
     };
-    eframe::run_native("高校认证 v6.1", opts, Box::new(|cc| { install_cjk_font(&cc.egui_ctx); Box::new(App::default()) }))
+    eframe::run_native("高校认证 v6.2", opts, Box::new(|cc| { install_cjk_font(&cc.egui_ctx); Box::new(App::default()) }))
 }

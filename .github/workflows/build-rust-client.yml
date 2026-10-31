@@ -9,7 +9,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build release
+      - name: Fetch adb for embedding
+        run: |
+          Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile pt0.zip
+          Expand-Archive -Path pt0.zip -DestinationPath pt0
+          New-Item -ItemType Directory -Force -Path rust-clientssets | Out-Null
+          Copy-Item pt0\platform-toolsdb.exe rust-clientssets          Copy-Item pt0\platform-tools\AdbWinApi.dll rust-clientssets          Copy-Item pt0\platform-tools\AdbWinUsbApi.dll rust-clientssets      - name: Build release
         working-directory: rust-client
         run: cargo build --release
       - name: Bundle adb + zip
