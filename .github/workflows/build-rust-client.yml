@@ -1,0 +1,37 @@
+name: build-rust-client
+on:
+  push:
+    paths: ['rust-client/**', '.github/workflows/build-rust-client.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release
+        working-directory: rust-client
+        run: cargo build --release
+      - name: Bundle adb + zip
+        run: |
+          Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile pt.zip
+          Expand-Archive -Path pt.zip -DestinationPath pt
+          New-Item -ItemType Directory -Force -Path stage, stage\adb | Out-Null
+          Copy-Item pt\platform-tools\adb.exe stage\adb\
+          Copy-Item pt\platform-tools\AdbWinApi.dll stage\adb\
+          Copy-Item pt\platform-tools\AdbWinUsbApi.dll stage\adb\
+          Copy-Item rust-client\target\release\chsi-rust.exe stage\高校认证.exe
+          (Get-FileHash .\stage\高校认证.exe -Algorithm SHA256).Hash.ToLower() | Out-File stage\app.sha256 -Encoding ascii
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path .\stage).Path, (Join-Path (Get-Location) 'chsi-rust-client.zip'))
+      - name: Smoke test
+        run: |
+          $p = Start-Process -FilePath .\rust-client\target\release\chsi-rust.exe -PassThru
+          Start-Sleep -Seconds 6
+          if ($p.HasExited) { Write-Host "EXITED code=$($p.ExitCode)"; exit 1 }
+          Write-Host "ALIVE OK"
+          Stop-Process -Id $p.Id -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chsi-rust-client
+          path: chsi-rust-client.zip
