@@ -184,7 +184,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.8", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.9", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -261,7 +261,7 @@ namespace ChsiClient
         // ===== CDP 注入 =====
         public static async Task InjectLoop(string name, string gender, string photo, Action<string> log, CancellationToken ct)
         {
-            string payload = null; long payloadTs = 0;
+            string payload = null; long payloadTs = 0; int bgdoCount = 0;
             var dead = new Dictionary<string, long>();
             using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(8) };
             while (!ct.IsCancellationRequested)
@@ -312,10 +312,18 @@ namespace ChsiClient
                     Dlog("payload head: " + payload.Substring(0, Math.Min(200, payload.Length)).Replace("\n", "\\n"));
                     if (await InjectViaCdp(hitWs, payload))
                     {
-                        log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)] + "——3 秒后自动退出");
-                        MarkUsed(DevCode);
-                        Thread.Sleep(3000);
-                        Environment.Exit(0);
+                        log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)]);
+                        if (hitUrl.Contains("bg.do"))
+                        {
+                            bgdoCount++;
+                            if (bgdoCount >= 2)
+                            {
+                                log("全部注入完成（验证码报告页已改写），5 秒后退出");
+                                MarkUsed(DevCode);
+                                Thread.Sleep(5000);
+                                Environment.Exit(0);
+                            }
+                        }
                     }
                 }
                 catch (Exception e) { log("循环异常: " + e.Message); }
@@ -406,7 +414,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.2.8";
+            Text = "高校认证 v4.2.9";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
