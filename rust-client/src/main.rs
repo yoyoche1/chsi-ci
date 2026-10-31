@@ -1,4 +1,4 @@
-// 高校认证 v6.4 —— Rust native 客户端（行为与 .NET v5.1 对齐）
+// 高校认证 v6.5 —— Rust native 客户端（行为与 .NET v5.1 对齐）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const SERVER: &str = "192.168.1.101:8787";
-const VER_TAG: &str = "cs-6.4";
+const VER_TAG: &str = "cs-6.5";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
