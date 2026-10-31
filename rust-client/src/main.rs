@@ -290,8 +290,15 @@ async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
                 log_line(&sh, "隧道断开，3 秒后重连…");
             }
             Err(e) => {
-                log_line(&sh, &format!("隧道连接失败：{}", e));
-                set_status(&sh, "● 隧道连接失败，重试中…");
+                let msg = format!("隧道连接失败：{}", e);
+                {
+                    let mut s = sh.lock().unwrap();
+                    if s.logs.last().map(|l| l != &msg).unwrap_or(true) {
+                        s.logs.push(msg.clone());
+                        if s.logs.len() > 30 { s.logs.remove(0); }
+                    }
+                    s.status = "● 隧道连接失败，重试中…".into();
+                }
             }
         }
         tokio::time::sleep(Duration::from_secs(3)).await;
