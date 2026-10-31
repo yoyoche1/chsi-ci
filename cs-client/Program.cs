@@ -184,7 +184,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.2.9", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.0", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -294,7 +294,7 @@ namespace ChsiClient
                             var urls = new List<string>();
                             foreach (var pg2 in pages.RootElement.EnumerateArray())
                                 if (pg2.TryGetProperty("url", out var u2)) urls.Add(u2.GetString());
-                            log("p" + port + "=" + pages.RootElement.GetArrayLength() + "页 [" + string.Join(" | ", urls.Select(u2 => u2.Length > 40 ? u2.Substring(0, 40) : u2)) + "]");
+                            Dlog("p" + port + "=" + pages.RootElement.GetArrayLength() + " [" + string.Join(" | ", urls.Select(u2 => u2.Length > 40 ? u2.Substring(0, 40) : u2)) + "]");
                             foreach (var pg in pages.RootElement.EnumerateArray())
                             {
                                 var url = pg.TryGetProperty("url", out var u) ? u.GetString() : "";
@@ -304,7 +304,7 @@ namespace ChsiClient
                             }
                             if (hitUrl != null) break;
                         }
-                        catch (Exception ex2) { log("p" + port + " 错误: " + ex2.Message); if (!dead.ContainsKey(sk) || DateTime.Now - DateTime.FromBinary(dead[sk]) > TimeSpan.FromSeconds(30)) dead[sk] = DateTime.Now.ToBinary(); }
+                        catch (Exception ex2) { Dlog("p" + port + " exc: " + ex2.Message); if (!dead.ContainsKey(sk) || DateTime.Now - DateTime.FromBinary(dead[sk]) > TimeSpan.FromSeconds(30)) dead[sk] = DateTime.Now.ToBinary(); }
                     }
                     if (hitUrl == null) { log("等待学信网页面（在 QQ 里打开后自动检测）…"); await Task.Delay(4000, ct); continue; }
 
@@ -395,7 +395,7 @@ namespace ChsiClient
                     if (dev != null)
                     {
                         var fp = DeviceFingerprint(dev);
-                        if (fp != null) { if (LastUsed() == fp) fp = Rotate(fp); DevCode = fp; Dlog("devcode ready"); break; }
+                        if (fp != null) { var used = LastUsed(); if (used != null) fp = Rotate(used); DevCode = fp; Dlog("devcode ready " + DevCode); break; }
                     }
                     Thread.Sleep(3000);
                 }
@@ -414,7 +414,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.2.9";
+            Text = "高校认证 v4.3.0";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
