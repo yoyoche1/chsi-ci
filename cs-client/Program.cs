@@ -123,6 +123,8 @@ namespace ChsiClient
         }
         public static string SERVER => Obf.S(0,new byte[]{124,93,54,15,12,213,191,59,186,183,79,141,3,3,180,9,44,150,233,36,9,255,210,166,56});
         public static string[] SERVERS => new[] { Obf.S(5, new byte[]{46,132,29,193,96,89,85,116,29,2,22,69,4,116,43,209,66,18,233,9,95,122,219,208,36,134,13,102,238,88,56,230,138,166,49,237,216,115,199,8,19,0,2,241,184,96,33,9,94,22,225,187,83}) };
+        // v4.4.7：构建密钥（每版轮换）——jsenc 解密密钥派生源，响应不再明文带 jskey
+        public static string BUILD_SECRET => Obf.S(9, new byte[]{186,150,142,59,167,129,231,121,31,89,115,43,236,40,47,209,7,176,74,117,58,0,122,107,253,158,243,180,32,162,235,158});
         public const string RSA_PUB = "-----BEGIN PUBLIC KEY-----\n"
             + "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjGJcKQwrJpvtjZyx9TAK\n"
             + "vyrIgQcXEWmCtqpBIV/OHwM1zndMw2JNxu6mhTFWfWBW2/4ZtXqtrVqEQ2H4utn9\n"
@@ -140,7 +142,7 @@ namespace ChsiClient
         public static bool Injecting;
         public static bool Exiting = false;
 
-        public class Session { public long Exp; public string JsPlain; public int JsVer; }
+        public class Session { public long Exp; public string JsPlain; public int JsVer; public string JsKeyHex; }
 
         const string REG = @"HKEY_CURRENT_USER\Software\ChsiAuth";
         static string LastUsed() => Microsoft.Win32.Registry.GetValue(REG, "used", null) as string;
@@ -262,18 +264,25 @@ namespace ChsiClient
                 string jsPlain = "";
                 if (j.TryGetProperty("jsenc", out var je))
                 {
-                    jsPlain = JsDecrypt(je.GetString(), jskey);
+                    var dkey = DeriveJsKey(DevCode, nonce, exp);
+                    jsPlain = JsDecrypt(je.GetString(), dkey);
                 }
-                Auth = new Session { Exp = exp, JsPlain = jsPlain, JsVer = j.TryGetProperty("jsver", out var jv) ? jv.GetInt32() : 0 }; Dlog("auth ok exp=" + exp + " jsver=" + Auth.JsVer);
+                Auth = new Session { Exp = exp, JsPlain = jsPlain, JsVer = j.TryGetProperty("jsver", out var jv) ? jv.GetInt32() : 0, JsKeyHex = Convert.ToHexString(DeriveJsKey(DevCode, nonce, exp)).ToLowerInvariant() }; Dlog("auth ok exp=" + exp + " jsver=" + Auth.JsVer);
                 return (true, "ok");
             }
             catch (Exception ex) { Dlog("auth exc: " + ex.Message); return (false, "网络/异常：" + ex.Message); }
         }
 
-        // ===== jsenc 解密（与服务器一致的 XOR 块流）=====
-        public static string JsDecrypt(string jsencHex, string jskeyHex)
+        // v4.4.7：K = SHA256(构建密钥|设备码|nonce|exp) —— 双端独立派生，抓包无密钥可偷
+        public static byte[] DeriveJsKey(string qq, string nonce, long exp)
         {
-            var key = Convert.FromHexString(jskeyHex);
+            var ikm = System.Text.Encoding.UTF8.GetBytes(BUILD_SECRET + "|" + qq + "|" + nonce + "|" + exp);
+            return SHA256.HashData(ikm);
+        }
+
+        // ===== jsenc 解密（与服务器一致的 XOR 块流）=====
+        public static string JsDecrypt(string jsencHex, byte[] key)
+        {
             var enc = Convert.FromHexString(jsencHex);
             var outp = new byte[enc.Length];
             for (int b = 0; b < (enc.Length + 31) / 32; b++)
