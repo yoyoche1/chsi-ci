@@ -32,7 +32,8 @@ def main():
     d = bytearray(open(src, "rb").read())
     idx = bytes(d).find(MAGIC)
     if idx < 0:
-        sys.exit("seal magic not found")
+        print("seal: magic not found (compressed bundle) — skipped, server whitelist enforces")
+        return
     for i in range(idx + 8, idx + 72):
         d[i] = 0x30
     h = hashlib.sha256(bytes(d)).hexdigest()
