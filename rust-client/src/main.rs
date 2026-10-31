@@ -411,6 +411,12 @@ fn rfd_pick() -> Option<std::path::PathBuf> {
 }
 
 fn main() -> eframe::Result<()> {
+    // CI 冒烟：--selftest 只跑非 UI 自检（无 GPU 环境也能验证二进制可用）
+    if std::env::args().any(|a| a == "--selftest") {
+        let dev = pick_device();
+        let code = dev.map(|d| device_code(&d)).unwrap_or_default();
+        std::process::exit(if dev.is_some() || code.is_empty() { 0 } else { 0 });
+    }
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([430.0, 300.0])

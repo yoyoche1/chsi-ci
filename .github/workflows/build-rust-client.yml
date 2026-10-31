@@ -26,11 +26,9 @@ jobs:
           [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path .\stage).Path, (Join-Path (Get-Location) 'chsi-rust-client.zip'))
       - name: Smoke test
         run: |
-          $p = Start-Process -FilePath .\rust-client\target\release\chsi-rust.exe -PassThru
-          Start-Sleep -Seconds 6
-          if ($p.HasExited) { Write-Host "EXITED code=$($p.ExitCode)"; exit 1 }
-          Write-Host "ALIVE OK"
-          Stop-Process -Id $p.Id -Force
+          $p = Start-Process -FilePath .\rust-client\target\release\chsi-rust.exe -ArgumentList '--selftest' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { Write-Host "EXITED code=$($p.ExitCode)"; exit 1 }
+          Write-Host "SELFTEST OK"
       - uses: actions/upload-artifact@v4
         with:
           name: chsi-rust-client
