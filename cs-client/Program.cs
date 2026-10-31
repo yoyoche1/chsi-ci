@@ -230,7 +230,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.4", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.5", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -301,7 +301,7 @@ namespace ChsiClient
             jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+RENAME\s*=\s*%@;", "");
             jsBody = System.Text.RegularExpressions.Regex.Replace(jsBody, @"var\s+PHOTO\s*=\s*'%@';", "");
             jsBody = jsBody.Replace("%@", "''");
-            return sb + "\n" + jsBody;
+            return sb + "\n" + jsBody + "\n;window.__chsiJsVer=" + (Auth?.JsVer ?? 0) + ";";
         }
 
         // ===== CDP 注入 =====
@@ -356,7 +356,9 @@ namespace ChsiClient
 
                     Dlog("inject -> " + hitUrl[..Math.Min(60, hitUrl.Length)] + " payload=" + payload.Length + "B");
                     Dlog("payload head: " + payload.Substring(0, Math.Min(200, payload.Length)).Replace("\n", "\\n"));
-                    if (await InjectViaCdp(hitWs, payload))
+                    bool already = await CheckInstalled(hitWs, Auth?.JsVer ?? 0);
+                    if (already) { Dlog("skip reinject (installed v" + Auth?.JsVer + ")"); }
+                    else if (await InjectViaCdp(hitWs, payload))
                     {
                         log("✅ 已注入: " + hitUrl[..Math.Min(70, hitUrl.Length)]);
                         if (hitUrl.Contains("bg.do"))
@@ -397,6 +399,27 @@ namespace ChsiClient
             }
             Dlog("sockets: " + out0.Count + " [" + string.Join(",", out0.Take(4)) + "]");
             return out0.Distinct().ToList();
+        }
+
+        static async Task<bool> CheckInstalled(string wsUrl, int jsver)
+        {
+            try
+            {
+                using var ws = new ClientWebSocket();
+                ws.Options.Proxy = new WebProxy();
+                using var cts = new CancellationTokenSource(4000);
+                await ws.ConnectAsync(new Uri(wsUrl), cts.Token);
+                var probe = "(function(){try{return (window.__chsiJsVer===" + jsver + " && !!window.__chsiRewriterInstalled);}catch(e){return false;}})()";
+                var msg = JsonSerializer.Serialize(new Dictionary<string, object>
+                { ["id"] = 1, ["method"] = "Runtime.evaluate", ["params"] = new { expression = probe, returnByValue = true } });
+                var buf = Encoding.UTF8.GetBytes(msg);
+                await ws.SendAsync(buf, WebSocketMessageType.Text, true, cts.Token);
+                var rbuf = new byte[2048];
+                var res = await ws.ReceiveAsync(rbuf, cts.Token);
+                var text = Encoding.UTF8.GetString(rbuf, 0, res.Count);
+                return text.Contains("\"value\":true");
+            }
+            catch { return false; }
         }
 
         static async Task<bool> InjectViaCdp(string wsUrl, string expr)
@@ -461,7 +484,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.3.4";
+            Text = "高校认证 v4.3.5";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
