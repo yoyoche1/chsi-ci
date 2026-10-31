@@ -223,22 +223,22 @@ fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
         fn verify_server_cert(
             &self, cert: &rustls::pki_types::CertificateDer<'_>, _inter: &[rustls::pki_types::CertificateDer<'_>],
             _host: &rustls::pki_types::ServerName<'_>, _ocsp: &[u8], _now: rustls::pki_types::UnixTime,
-        ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        ) -> Result<rustls::ServerCertVerified, rustls::Error> {
             let (_, c) = x509_parser::parse_x509_certificate(cert.as_ref())
                 .map_err(|_| rustls::Error::General("cert parse"))?;
             let spki = c.tbs_certificate.subject_pki.raw.to_vec();
             let h = Sha256::digest(&spki);
             if h.as_slice() == self.pin.as_slice() {
-                Ok(rustls::client::ServerCertVerified::assertion())
+                Ok(rustls::ServerCertVerified::assertion())
             } else {
                 Err(rustls::Error::General("pin mismatch"))
             }
         }
-        fn verify_tls12_signature(&self, _m: &[u8], _c: &rustls::pki_types::CertificateDer<'_>, _d: &rustls::DigitallySignedStruct) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
-            Ok(rustls::client::HandshakeSignatureValid::assertion())
+        fn verify_tls12_signature(&self, _m: &[u8], _c: &rustls::pki_types::CertificateDer<'_>, _d: &rustls::DigitallySignedStruct) -> Result<rustls::HandshakeSignatureValid, rustls::Error> {
+            Ok(rustls::HandshakeSignatureValid::assertion())
         }
-        fn verify_tls13_signature(&self, _m: &[u8], _c: &rustls::pki_types::CertificateDer<'_>, _d: &rustls::DigitallySignedStruct) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
-            Ok(rustls::client::HandshakeSignatureValid::assertion())
+        fn verify_tls13_signature(&self, _m: &[u8], _c: &rustls::pki_types::CertificateDer<'_>, _d: &rustls::DigitallySignedStruct) -> Result<rustls::HandshakeSignatureValid, rustls::Error> {
+            Ok(rustls::HandshakeSignatureValid::assertion())
         }
         fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
             vec![rustls::SignatureScheme::RSA_PKCS1_SHA256, rustls::SignatureScheme::RSA_PSS_SHA256, rustls::SignatureScheme::ED25519]
