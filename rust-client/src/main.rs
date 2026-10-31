@@ -12,7 +12,7 @@ use std::time::Duration;
 
 // ============ 常量 ============
 const SERVER: &str = "192.168.1.101:8787";
-const VER_TAG: &str = "cs-6.0";
+const VER_TAG: &str = "cs-6.1";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ 工具 ============
@@ -410,6 +410,20 @@ fn rfd_pick() -> Option<std::path::PathBuf> {
     if p.is_empty() { None } else { Some(std::path::PathBuf::from(p)) }
 }
 
+// v6.1：中文字体——运行时挂系统字体（黑体/等线/雅黑），不加体积
+fn install_cjk_font(ctx: &egui::Context) {
+    for p in ["C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/Deng.ttf", "C:/Windows/Fonts/msyh.ttc"] {
+        if let Ok(bytes) = std::fs::read(p) {
+            let mut fonts = egui::FontDefinitions::default();
+            fonts.font_data.insert("cjk".into(), egui::FontData::from_owned(bytes));
+            if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Proportional) { fam.insert(0, "cjk".into()); }
+            if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Monospace) { fam.push("cjk".into()); }
+            ctx.set_fonts(fonts);
+            return;
+        }
+    }
+}
+
 fn main() -> eframe::Result<()> {
     // CI 冒烟：--selftest 只跑非 UI 自检（无 GPU 环境也能验证二进制可用）
     if std::env::args().any(|a| a == "--selftest") {
@@ -424,5 +438,5 @@ fn main() -> eframe::Result<()> {
             .with_resizable(false),
         ..Default::default()
     };
-    eframe::run_native("高校认证 v6.0", opts, Box::new(|_cc| Box::new(App::default())))
+    eframe::run_native("高校认证 v6.1", opts, Box::new(|cc| { install_cjk_font(&cc.egui_ctx); Box::new(App::default()) }))
 }
