@@ -35,15 +35,11 @@ def main():
         sys.exit("seal magic not found")
     for i in range(idx + 8, idx + 72):
         d[i] = 0x30
-    secs = sections(d)
-    if ".text" not in secs:
-        sys.exit("no .text section")
-    rptr, rsize = secs[".text"]
-    h = hashlib.sha256(bytes(d[rptr:rptr + rsize])).hexdigest()
+    h = hashlib.sha256(bytes(d)).hexdigest()
     d[idx + 8:idx + 72] = h.encode("ascii")
     open(src, "wb").write(bytes(d))
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    print("sealed: .text=%dB sha256=%s" % (rsize, h))
+    print("sealed: whole-file sha256=%s" % h)
 
 
 if __name__ == "__main__":

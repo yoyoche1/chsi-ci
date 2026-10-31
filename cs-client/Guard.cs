@@ -151,31 +151,30 @@ static class Guard
         string stored;
         try { stored = Encoding.ASCII.GetString(all, idx + 8, 64); } catch { return false; }
         if (stored.Any(ch => !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')))) return false;
+        return ComputeSealedHash(all, idx) == stored;
+    }
 
-        // 校验时把 64 字节摘要字段清零再算（与 seal.py 一致，保证自洽）
-        for (int i = idx + 8; i < idx + 72; i++) all[i] = 0x30;
-
-        // PE 区段表：找 .text 的 (rptr, rsize)
-        if (all.Length < 0x40 || all[0] != (byte)'M' || all[1] != (byte)'Z') return false;
-        int e = BitConverter.ToInt32(all, 0x3C);
-        if (e + 24 > all.Length || all[e] != (byte)'P' || all[e + 1] != (byte)'E') return false;
-        int nsec = BitConverter.ToUInt16(all, e + 6);
-        int optsz = BitConverter.ToUInt16(all, e + 20);
-        int shbase = e + 24 + optsz;
-        for (int i = 0; i < nsec; i++)
+    // v4.4.5：全文件哈希（封签区清零后）——bundle/overlay 被改也必然露馅
+    // （.text 校验拦不住"槽位覆盖"攻击：托管 dll 在 PE 尾部 overlay，改它不碰代码段）
+    public static string ComputeSealedHash(byte[] all, int idx)
         {
-            int o = shbase + i * 40;
-            if (o + 40 > all.Length) break;
-            var name = Encoding.ASCII.GetString(all, o, 8).TrimEnd('\0');
-            if (name != ".text") continue;
-            int rsize = (int)BitConverter.ToUInt32(all, o + 16);
-            int rptr = (int)BitConverter.ToUInt32(all, o + 20);
-            if (rptr + rsize > all.Length || rsize <= 0) return false;
+            var buf = (byte[])all.Clone();
+            for (int i = idx + 8; i < idx + 72 && i < buf.Length; i++) buf[i] = 0x30;
             using var sha = SHA256.Create();
-            var h = sha.ComputeHash(all, rptr, rsize);
-            var got = BitConverter.ToString(h).Replace("-", "").ToLowerInvariant();
-            return got == stored;
+            var h = sha.ComputeHash(buf);
+            return BitConverter.ToString(h).Replace("-", "").ToLowerInvariant();
         }
-        return false;
+
+        // 授权握手用的自身哈希（原样，含封签值）——服务端白名单比对的依据
+        public static string SelfSha256()
+        {
+            try
+            {
+                var path = Process.GetCurrentProcess().MainModule.FileName;
+                using var sha = SHA256.Create();
+                return BitConverter.ToString(sha.ComputeHash(File.ReadAllBytes(path))).Replace("-", "").ToLowerInvariant();
+            }
+            catch { return ""; }
+        }
     }
 }
