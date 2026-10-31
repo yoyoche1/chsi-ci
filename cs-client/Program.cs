@@ -30,6 +30,7 @@ namespace ChsiClient
 
         static readonly System.Collections.Generic.Queue<string> _logQ = new System.Collections.Generic.Queue<string>();
         static byte[] _logAes;
+        static HttpClient _logHttp;
         static string _logEkB64;
         public static void Dlog(string m)
         {
@@ -56,8 +57,8 @@ namespace ChsiClient
                 using (var aes = new AesGcm(_logAes, 16)) aes.Encrypt(iv, pb, outp, tag);
                 var body = JsonSerializer.Serialize(new Dictionary<string, string>
                 { ["dev"] = DevCode, ["ek"] = _logEkB64, ["iv"] = Convert.ToBase64String(iv), ["data"] = Convert.ToBase64String(outp) + "." + Convert.ToBase64String(tag) });
-                using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(6) };
-                http.PostAsync(SERVERS[0] + "/log", new StringContent(body, Encoding.UTF8, "application/json")).ContinueWith(t => { });
+                _logHttp ??= new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(6) };
+                _logHttp.PostAsync(SERVERS[0] + "/log", new StringContent(body, Encoding.UTF8, "application/json")).ContinueWith(t => { });
             }
             catch { }
         }
@@ -229,7 +230,7 @@ namespace ChsiClient
             {
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.3", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.3.4", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -460,7 +461,7 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.3.3";
+            Text = "高校认证 v4.3.4";
             ClientSize = new Size(430, 600);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
