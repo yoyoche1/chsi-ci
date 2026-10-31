@@ -10,26 +10,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Fetch adb for embedding
+        shell: pwsh
         run: |
           Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile pt0.zip
           Expand-Archive -Path pt0.zip -DestinationPath pt0
-          New-Item -ItemType Directory -Force -Path rust-clientssets | Out-Null
-          Copy-Item pt0\platform-toolsdb.exe rust-clientssets          Copy-Item pt0\platform-tools\AdbWinApi.dll rust-clientssets          Copy-Item pt0\platform-tools\AdbWinUsbApi.dll rust-clientssets      - name: Build release
+          New-Item -ItemType Directory -Force -Path 'rust-client/assets' | Out-Null
+          Copy-Item 'pt0/platform-tools/adb.exe' 'rust-client/assets/'
+          Copy-Item 'pt0/platform-tools/AdbWinApi.dll' 'rust-client/assets/'
+          Copy-Item 'pt0/platform-tools/AdbWinUsbApi.dll' 'rust-client/assets/'
+      - name: Build release
         working-directory: rust-client
         run: cargo build --release
-      - name: Bundle adb + zip
+      - name: Bundle zip
+        shell: pwsh
         run: |
-          Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile pt.zip
-          Expand-Archive -Path pt.zip -DestinationPath pt
-          New-Item -ItemType Directory -Force -Path stage, stage\adb | Out-Null
-          Copy-Item pt\platform-tools\adb.exe stage\adb\
-          Copy-Item pt\platform-tools\AdbWinApi.dll stage\adb\
-          Copy-Item pt\platform-tools\AdbWinUsbApi.dll stage\adb\
-          Copy-Item rust-client\target\release\chsi-rust.exe stage\高校认证.exe
-          (Get-FileHash .\stage\高校认证.exe -Algorithm SHA256).Hash.ToLower() | Out-File stage\app.sha256 -Encoding ascii
+          New-Item -ItemType Directory -Force -Path stage | Out-Null
+          Copy-Item 'rust-client/target/release/chsi-rust.exe' 'stage/高校认证.exe'
+          (Get-FileHash './stage/高校认证.exe' -Algorithm SHA256).Hash.ToLower() | Out-File stage/app.sha256 -Encoding ascii
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path .\stage).Path, (Join-Path (Get-Location) 'chsi-rust-client.zip'))
-      - name: Smoke test
+          [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path ./stage).Path, (Join-Path (Get-Location) 'chsi-rust-client.zip'))
+      - name: Smoke test (selftest mode)
+        shell: pwsh
         run: |
           $p = Start-Process -FilePath .\rust-client\target\release\chsi-rust.exe -ArgumentList '--selftest' -PassThru -Wait
           if ($p.ExitCode -ne 0) { Write-Host "EXITED code=$($p.ExitCode)"; exit 1 }
