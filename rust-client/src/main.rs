@@ -485,7 +485,7 @@ impl eframe::App for App {
                                 Some((data, size)) => {
                                     self.photo = data;
                                     self.photo_name = format!("{} (压缩后{}KB)", p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default(), size / 1024);
-                                    log_line(&self.shared, &format!("已选择照片：{}", self.photo_name));
+                                    log_line(&self.shared, &format!("已选择照片（{}KB）", (self.photo.len() * 3 / 4 / 1024)));
                                 }
                                 None => {
                                     self.photo_name = "读取/压缩失败".into();
