@@ -10,7 +10,12 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const SERVER_HTTP: &str = "[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787";
+// v8.1：生产入口 = ChmlFrp + TLS + 证书指纹固定；回退 = 直连 IPv6（明文，过渡期保留）
+const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
+const SERVER_HTTP: &str = "vip.bj.frp.one:50970";
+const SERVER_HOST: &str = "vip.bj.frp.one";
+const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
+const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const SERVER_HOST: &str = "[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787";
 const SERVER_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const VER_TAG: &str = "cs-8.0";
@@ -212,6 +217,49 @@ use tokio_tungstenite::tungstenite::Message;
 const T_OPEN: u8 = 0x01;
 const T_DATA: u8 = 0x02;
 const T_CLOSE: u8 = 0x03;
+
+// TLS：只信指纹匹配的自签证书（SPKI SHA-256）
+fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
+    use rustls::client::ServerCertVerifier;
+    struct PinVerifier { pin: Vec<u8> }
+    impl ServerCertVerifier for PinVerifier {
+        fn verify_server_cert(
+            &self, cert: &rustls::Certificate, _inter: &[rustls::Certificate],
+            _host: &rustls::ServerName, _sig: &[u8], _now: std::time::SystemTime,
+        ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+            let (_, c) = x509_parser::parse_x509_certificate(&cert.0)
+                .map_err(|_| rustls::Error::General("cert parse"))?;
+            let spki = c.tbs_certificate.subject_pki.raw.to_vec();
+            let h = Sha256::digest(&spki);
+            if h.as_slice() == self.pin.as_slice() {
+                Ok(rustls::client::ServerCertVerified::assertion())
+            } else {
+                Err(rustls::Error::General("pin mismatch"))
+            }
+        }
+    }
+    let verifier = PinVerifier {
+        pin: {
+            // base64 解码 PIN
+            let mut out = Vec::new();
+            const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            let vals: Vec<i32> = PIN.bytes().map(|c| T.iter().position(|t| *t == c).map(|x| x as i32).unwrap_or(-1)).collect();
+            for ch in vals.chunks(4) {
+                if ch.len() < 4 { break; }
+                let n = (ch[0] << 18) | (ch[1] << 12) | (ch[2] << 6) | ch[3];
+                out.push((n >> 16) as u8);
+                if ch[2] != -1 { out.push((n >> 8) as u8); }
+                if ch[3] != -1 { out.push(n as u8); }
+            }
+            out
+        },
+    };
+    let mut cfg = rustls::ClientConfig::builder()
+        .with dangerous()
+        .with_custom_certificate_verifier(std::sync::Arc::new(verifier))
+        .with_no_client_auth();
+    std::sync::Arc::new(cfg)
+}
 
 fn frame(t: u8, id: u32, body: &[u8]) -> Vec<u8> {
     let mut v = Vec::with_capacity(5 + body.len());
