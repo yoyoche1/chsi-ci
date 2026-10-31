@@ -333,7 +333,7 @@ namespace ChsiClient
             }
         }
 
-        int bgdoCount = 0;
+        static int bgdoCount = 0;
         public static async Task InjectLoop(string name, string gender, string photo, Action<string> log, CancellationToken ct)
         {
             string payload = null; long payloadTs = 0;
