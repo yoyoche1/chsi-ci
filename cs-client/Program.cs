@@ -306,7 +306,7 @@ namespace ChsiClient
 
         // ===== CDP 注入 =====
         // v4.3.7：照片压缩（最长边 200px JPEG q80，与 iOS 端一致，载荷从 ~700KB 降到 ~20KB）
-        static string CompressPhoto(string path)
+        public static string CompressPhoto(string path)
         {
             try
             {
@@ -559,7 +559,7 @@ namespace ChsiClient
                 using var dlg = new OpenFileDialog { Filter = "图片|*.jpg;*.jpeg;*.png" };
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {
-                    photoData = CompressPhoto(dlg.FileName);
+                    photoData = Program.CompressPhoto(dlg.FileName);
                     photoName = Path.GetFileName(dlg.FileName);
                     lbPhoto.Text = photoName;
                     TextChangedCheck(null, null);
