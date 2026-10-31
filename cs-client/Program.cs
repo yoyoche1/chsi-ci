@@ -231,7 +231,7 @@ namespace ChsiClient
                 if (DevCode == "") return (false, "未检测到设备——请插手机并开启 USB 调试");
                 if (Guard.Compromised) return (false, "网络异常，请稍后重试");
                 var nonce = Guid.NewGuid().ToString("N")[..16];
-                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.1", nonce });
+                var body = JsonSerializer.Serialize(new { qq = DevCode, code, bundle = "chsi-cs", ver = "cs-4.4.2", nonce });
                 JsonElement j = default; string lastErr = null; bool got = false;
                 foreach (var srv in SERVERS)
                 {
@@ -515,8 +515,8 @@ namespace ChsiClient
 
         public MainForm()
         {
-            Text = "高校认证 v4.4.1";
-            ClientSize = new Size(430, 600);
+            Text = "高校认证 v4.4.2";
+            ClientSize = new Size(430, 320);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -570,7 +570,7 @@ namespace ChsiClient
             btnSave = new Button
             {
                 Text = "保存并应用", Location = new Point(24, 460), Width = 382, Height = 46, FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(209, 209, 214), ForeColor = Color.White, Enabled = false, Font = new Font("Segoe UI", 11, FontStyle.Bold)
+                BackColor = Color.FromArgb(209, 209, 214), ForeColor = Color.White, Enabled = false, Visible = false, Font = new Font("Segoe UI", 11, FontStyle.Bold)
             };
             btnSave.FlatAppearance.BorderSize = 0;
             btnSave.Click += async (s, e) => await SaveAndApply();
@@ -588,9 +588,46 @@ namespace ChsiClient
             tmr.Tick += (s, e) => RefreshUi();
             tmr.Start();
 
+            btnVerify = new Button
+            {
+                Text = "验证", Location = new Point(24, 262), Width = 382, Height = 46, FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(0, 122, 255), ForeColor = Color.White, Font = new Font("Segoe UI", 11, FontStyle.Bold)
+            };
+            btnVerify.FlatAppearance.BorderSize = 0;
+            btnVerify.Click += async (s2, e2) => await VerifyOnly();
+            Controls.Add(btnVerify);
+
             TextChangedCheck(null, null);
             tbCode.TextChanged += TextChangedCheck;
             tbName.TextChanged += TextChangedCheck;
+
+            // v4.4.2：启动 2.5s 后仍无设备 → 弹窗引导开 USB 调试（不进完整界面）
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2500);
+                if (string.IsNullOrEmpty(Program.DevCode))
+                    try { BeginInvoke(new Action(() => MessageBox.Show(this, "未检测到设备。\n\n请打开手机的「USB 调试模式」，然后用数据线连接电脑。", "高校认证", MessageBoxButtons.OK, MessageBoxIcon.Warning))); } catch { }
+            });
+        }
+
+        Button btnVerify;
+        async Task VerifyOnly()
+        {
+            if (string.IsNullOrEmpty(Program.DevCode))
+            { MessageBox.Show(this, "请打开手机的「USB 调试模式」，并连接电脑。", "未检测到设备", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            var code = tbCode.Text.Trim();
+            if (string.IsNullOrEmpty(code))
+            { MessageBox.Show(this, "请输入授权码。", "高校认证", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            btnVerify.Enabled = false; btnVerify.Text = "验证中…";
+            var (ok, reason) = await Program.AuthOnce(code);
+            btnVerify.Enabled = true; btnVerify.Text = "验证";
+            if (!ok)
+            { MessageBox.Show(this, "验证失败：" + reason, "高校认证", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+            // 验证通过 → 展开完整界面
+            ClientSize = new Size(430, 600);
+            btnVerify.Visible = false;
+            btnSave.Visible = true;
+            TextChangedCheck(null, null);
         }
 
         Icon LoadIcon()
@@ -614,7 +651,8 @@ namespace ChsiClient
 
         void TextChangedCheck(object s, EventArgs e)
         {
-            var ok = !string.IsNullOrWhiteSpace(tbCode.Text) && !string.IsNullOrWhiteSpace(tbName.Text) && !string.IsNullOrEmpty(photoData);
+            if (btnSave == null) return;
+            var ok = btnSave.Visible && !string.IsNullOrWhiteSpace(tbCode.Text) && !string.IsNullOrWhiteSpace(tbName.Text) && !string.IsNullOrEmpty(photoData);
             btnSave.Enabled = ok;
             btnSave.BackColor = ok ? Color.FromArgb(0, 122, 255) : Color.FromArgb(209, 209, 214);
         }
