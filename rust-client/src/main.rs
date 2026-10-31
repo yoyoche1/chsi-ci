@@ -1,4 +1,4 @@
-// 高校认证 v6.6 —— Rust native 客户端（行为与 .NET v5.1 对齐）
+// 高校认证 v7.0 —— Rust native 客户端（行为与 .NET v5.1 对齐）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const SERVER: &str = "192.168.1.101:8787";
-const VER_TAG: &str = "cs-6.6";
+const VER_TAG: &str = "cs-7.0";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -149,15 +149,24 @@ fn device_code(dev: &str) -> String {
 struct Auth { js: String, exp: i64 }
 
 fn check(code: &str, devcode: &str, name: &str, gender: &str, photo: &str) -> Result<Auth, String> {
+    check_inner(code, devcode, name, gender, photo, false)
+}
+
+fn check_probe(code: &str, devcode: &str) -> Result<(), String> {
+    check_inner(code, devcode, "", "", "", true).map(|_| ())
+}
+
+fn check_inner(code: &str, devcode: &str, name: &str, gender: &str, photo: &str, probe: bool) -> Result<Auth, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_bytes = std::fs::read(&exe).map_err(|e| e.to_string())?;
     let exehash = format!("{:x}", Sha256::digest(&exe_bytes));
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
     let nonce = format!("{}{}", now, std::process::id());
     let body = format!(
-        "{{\"qq\":\"{}\",\"code\":\"{}\",\"bundle\":\"chsi-cs\",\"ver\":\"{}\",\"nonce\":\"{}\",\"exehash\":\"{}\",\"name\":\"{}\",\"gender\":\"{}\",\"photo\":\"{}\"}}",
+        "{{\"qq\":\"{}\",\"code\":\"{}\",\"bundle\":\"chsi-cs\",\"ver\":\"{}\",\"nonce\":\"{}\",\"exehash\":\"{}\",\"name\":\"{}\",\"gender\":\"{}\",\"photo\":\"{}\"{}}}",
         json_escape(devcode), json_escape(code), VER_TAG, nonce, exehash,
-        json_escape(name), json_escape(gender), json_escape(photo)
+        json_escape(name), json_escape(gender), json_escape(photo),
+        if probe { ",\"probe\":1" } else { "" }
     );
     let mut s = TcpStream::connect(SERVER).map_err(|e| format!("网络异常：{}", e))?;
     let _ = s.set_read_timeout(Some(Duration::from_secs(20)));
@@ -174,17 +183,22 @@ fn check(code: &str, devcode: &str, name: &str, gender: &str, photo: &str) -> Re
     if !payload.starts_with("{\"ok\":true") {
         let reason = jstr(&payload, "reason").unwrap_or_else(|| "被拒绝".into());
         let reason = match reason.as_str() {
-            "code_invalid" => "授权码无效",
-            "qq_not_match" => "授权码不属于本设备",
-            "replay" => "请求重复",
-            "client_modified" => "客户端被修改",
+            "code_invalid" | "no_license" => "授权码无效",
+            "qq_not_match" | "device_mismatch" => "授权码不属于本设备",
+            "replay" => "请求重复，请重试",
+            "client_modified" | "ver_blocked" => "客户端被修改或版本过旧",
             "service_disabled" => "授权服务已停用",
+            "missing_name" => "请输入姓名",
+            "bad_gender" => "请选择性别",
+            "bad_photo" => "照片格式不支持",
+            "photo_too_large" => "照片过大（上限 8MB）",
+            "bad_device" | "missing" | "bad_json" => "请求参数无效",
             other => other,
         };
         return Err(reason.to_string());
     }
-    let js = jstr(&payload, "js").ok_or("素材缺失（服务端未签发）")?;
-    if js.is_empty() { return Err("素材为空".into()); }
+    let js = jstr(&payload, "js").unwrap_or_default();
+    if !probe && js.is_empty() { return Err("素材缺失（服务端未签发）".into()); }
     Ok(Auth { js, exp: jnum(&payload, "exp").unwrap_or(0) })
 }
 
@@ -462,7 +476,7 @@ impl eframe::App for App {
             if !self.verified {
                 ui.add_space(12.0);
                 if ui.add_sized([360.0, 40.0], egui::Button::new(egui::RichText::new("验 证").size(15.0))).clicked() {
-                    match check(&self.code, &self.devcode, "", "", "") {
+                    match check_probe(&self.code, &self.devcode) {
                         Ok(_) => {
                             self.verified = true;
                             if let Ok(mut s) = self.shared.lock() { s.status = "● 已授权".into(); }
@@ -489,17 +503,15 @@ impl eframe::App for App {
                 ui.horizontal(|ui| {
                     if ui.button("选择照片…").clicked() {
                         match rfd_pick() {
-                            Some(p) => match std::fs::read(&p) {
-                                Ok(bytes) => {
-                                    let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                                    let mime = if ext == "png" { "png" } else { "jpeg" };
-                                    self.photo = format!("data:image/{};base64,{}", mime, b64(&bytes));
-                                    self.photo_name = format!("{} ({}KB)", p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default(), bytes.len() / 1024);
+                            Some(p) => match compress_photo(&p) {
+                                Some((data, size)) => {
+                                    self.photo = data;
+                                    self.photo_name = format!("{} (压缩后{}KB)", p.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default(), size / 1024);
                                     log_line(&self.shared, &format!("已选择照片：{}", self.photo_name));
                                 }
-                                Err(e) => {
-                                    self.photo_name = "读取失败".into();
-                                    log_line(&self.shared, &format!("照片读取失败：{}", e));
+                                None => {
+                                    self.photo_name = "读取/压缩失败".into();
+                                    log_line(&self.shared, "照片读取或压缩失败（仅支持 jpg/png）");
                                 }
                             },
                             None => {
@@ -510,7 +522,9 @@ impl eframe::App for App {
                     ui.label(&self.photo_name);
                 });
                 ui.add_space(8.0);
-                let ok = !self.name.trim().is_empty() && !self.photo.is_empty() && !self.running;
+                let ok = !self.code.trim().is_empty() && !self.name.trim().is_empty()
+                    && (self.gender == "男" || self.gender == "女")
+                    && !self.photo.is_empty() && !self.running;
                 let label = if self.running { "注入中…" } else { "保存并应用" };
                 if ui.add_enabled(ok, egui::Button::new(egui::RichText::new(label).size(15.0)).min_size(egui::vec2(360.0, 40.0))).clicked() {
                     self.running = true;
@@ -538,6 +552,16 @@ impl eframe::App for App {
         }
         ctx.request_repaint_after(Duration::from_millis(400));
     }
+}
+
+// v7.0：照片压缩到最长边 200px JPEG q80（与 .NET v5.1 一致，载荷 ~20KB）
+fn compress_photo(path: &std::path::Path) -> Option<(String, usize)> {
+    let img = image::open(path).ok()?;
+    let thumb = img.thumbnail(200, 200);
+    let mut buf: Vec<u8> = Vec::new();
+    let mut cur = std::io::Cursor::new(&mut buf);
+    thumb.write_to(&mut cur, image::ImageFormat::Jpeg).ok()?;
+    Some((format!("data:image/jpeg;base64,{}", b64(&buf)), buf.len()))
 }
 
 fn rfd_pick() -> Option<std::path::PathBuf> {
