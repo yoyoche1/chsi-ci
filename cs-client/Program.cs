@@ -48,8 +48,7 @@ namespace ChsiClient
                     rsa.ImportFromPem(RSA_PUB);
                     _logEkB64 = Convert.ToBase64String(rsa.Encrypt(_logAes, RSAEncryptionPadding.OaepSHA256));
                 }
-                var plain = string.Join("
-", lines);
+                var plain = string.Join("\n", lines);
                 var pb = Encoding.UTF8.GetBytes(plain);
                 var outp = new byte[pb.Length];
                 var iv = RandomNumberGenerator.GetBytes(12);
