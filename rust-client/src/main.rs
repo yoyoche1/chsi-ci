@@ -16,7 +16,7 @@ const SERVER_HOST: &str = "vip.bj.frp.one";
 const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
-const VER_TAG: &str = "cs-8.5";
+const VER_TAG: &str = "cs-8.6";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -249,13 +249,15 @@ fn pinned_tls_config() -> std::sync::Arc<rustls::ClientConfig> {
         pin: {
             let mut out = Vec::new();
             const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            let vals: Vec<i32> = PIN.bytes().map(|c| T.iter().position(|t| *t == c).map(|x| x as i32).unwrap_or(-1)).collect();
-            for ch in vals.chunks(4) {
-                if ch.len() < 4 { break; }
-                let n = (ch[0] << 18) | (ch[1] << 12) | (ch[2] << 6) | ch[3];
-                out.push((n >> 16) as u8);
-                out.push((n >> 8) as u8);
-                out.push(n as u8);
+            let mut bits: u32 = 0;
+            let mut nbits: u32 = 0;
+            for c in PIN.bytes() {
+                if c == b'=' { break; }
+                if let Some(v) = T.iter().position(|t| *t == c) {
+                    bits = (bits << 6) | v as u32;
+                    nbits += 6;
+                    if nbits >= 8 { nbits -= 8; out.push((bits >> nbits) as u8); }
+                }
             }
             out
         },
@@ -293,8 +295,7 @@ async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
             Some(tokio_tungstenite::Connector::Rustls(pinned_tls_config())),
         ).await {
             Ok((ws, _)) => {
-                log_line(&sh, "☁ 隧道已连接，云端注入中…");
-                set_status(&sh, "● 已授权 · 云端注入中");
+                set_status(&sh, "● 已授权 · 注入运行中");
                 let (mut sink, mut stream) = ws.split();
                 let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
                 let writer = tokio::spawn(async move {
@@ -639,7 +640,7 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([460.0, 560.0]),
         ..Default::default()
     };
-    eframe::run_native("高校认证 v8.5", opts, Box::new(|cc| {
+    eframe::run_native("高校认证 v8.6", opts, Box::new(|cc| {
         install_cjk_font(&cc.egui_ctx);
         Box::new(App::default())
     }))
