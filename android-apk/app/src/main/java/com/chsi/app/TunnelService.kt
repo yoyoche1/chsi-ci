@@ -168,7 +168,13 @@ class TunnelService : Service() {
         appendLog("素材就绪")
 
         setStatus("● 注入运行中…")
-        val t = TunnelClient(SERVER_WS, token, device, 19222, ports,
+        // 防护探测（对齐 exe）：调试器/注入框架/签名不符 → deg=1 → 云端静默毒化
+        var deg = "0"
+        if (Guard.hasTracer() || Guard.hasInjection()) {
+            deg = "1"
+            appendLog("环境异常（静默降级）")
+        }
+        val t = TunnelClient(SERVER_WS, token, device, 19222, ports, deg,
             onLog = { appendLog(it) },
             onStatus = { setStatus(it) },
             onExit = {

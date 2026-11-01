@@ -18,6 +18,7 @@ class TunnelClient(
     private val device: String,
     private val basePort: Int,         // 19222
     private val ports: List<Int>,      // 转发的全部端口
+    private val deg: String,           // "1" = 疑似调试/注入环境 → 云端静默毒化
     private val onLog: (String) -> Unit,
     private val onStatus: (String) -> Unit,
     private val onExit: () -> Unit
@@ -52,7 +53,7 @@ class TunnelClient(
     }
 
     private fun connectOnce() {
-        val url = "$serverWs?token=$token&device=$device&sig=${Crypto.tunnelSig(token, device)}&deg=0"
+        val url = "$serverWs?token=$token&device=$device&sig=${Crypto.tunnelSig(token, device)}&deg=$deg"
         onStatus("● 连接隧道…")
         val latch = java.util.concurrent.CountDownLatch(1)
         var failed: Throwable? = null

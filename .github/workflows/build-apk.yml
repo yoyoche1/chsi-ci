@@ -14,11 +14,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept licenses & install components
+      - name: SDK 组件（runner 预装 SDK，直接 sdkmanager）
         run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null
 
@@ -59,3 +57,10 @@ jobs:
         with:
           name: chsi-apk
           path: android-apk/app/build/outputs/apk/release/*.apk
+
+      - name: Upload keystore（首次生成时取回并提交仓库 → 证书哈希稳定）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chsi-keystore
+          path: android-apk/app/keystore/release.jks
