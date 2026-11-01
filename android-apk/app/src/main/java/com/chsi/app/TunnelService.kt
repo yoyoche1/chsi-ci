@@ -146,8 +146,12 @@ class TunnelService : Service() {
         }.toString()
         var resp = postJson(SERVER_CHECK, checkBody)
         if (!resp.optBoolean("ok")) {
-            setStatus("● 未授权：" + resp.optString("reason"))
-            appendLog("验证失败：" + resp.optString("reason"))
+            val rs = resp.optString("reason")
+            val msg = if (rs == "already_rewritten") "该码已完成改写，不能再用"
+                      else if (rs == "locked") "尝试次数过多，联系客服解锁"
+                      else rs
+            setStatus("● 未授权：" + msg)
+            appendLog("验证失败：" + msg)
             return
         }
         appendLog("验证通过")
@@ -160,8 +164,12 @@ class TunnelService : Service() {
         }.toString()
         resp = postJson(SERVER_PREPARE, prepBody)
         if (!resp.optBoolean("ok")) {
-            setStatus("● 准备失败：" + resp.optString("reason"))
-            appendLog(resp.optString("reason"))
+            val rs2 = resp.optString("reason")
+            val msg2 = if (rs2 == "already_rewritten") "该码已完成改写，不能再用"
+                       else if (rs2 == "locked") "尝试次数过多，联系客服解锁"
+                       else rs2
+            setStatus("● 准备失败：" + msg2)
+            appendLog(msg2)
             return
         }
         val token = resp.getString("token")
