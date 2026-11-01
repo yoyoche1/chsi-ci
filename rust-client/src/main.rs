@@ -496,9 +496,6 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
         rt.block_on(tunnel_loop(url, ports, sh));
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
-        rt.block_on(tunnel_loop(url, "127.0.0.1:19222".to_string(), sh));
     });
 }
 
