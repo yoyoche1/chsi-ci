@@ -8,6 +8,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
@@ -31,6 +33,16 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 class MainActivity : Activity() {
+    // ===== Design tokens（ui-ux-pro-max · Industrial/Utility dark · #97）=====
+    private val C_BG = 0xFF12121C.toInt()
+    private val C_SURFACE = 0xFF1B1B2C.toInt()
+    private val C_BORDER = 0xFF2D2C4E.toInt()
+    private val C_PRIMARY = 0xFF7675C7.toInt()
+    private val C_ACCENT = 0xFF3533CC.toInt()
+    private val C_GOLD = 0xFFCCCD84.toInt()
+    private val C_TEXT = 0xFFEDEFF3.toInt()
+    private val C_MUTED = 0xFF8A8FB8.toInt()
+
     private lateinit var edDevCode: EditText
     private lateinit var edCode: EditText
     private lateinit var btnVerify: Button
@@ -58,115 +70,156 @@ class MainActivity : Activity() {
             .build()
     }
 
+    // ===== 主题助手 =====
+    private fun label(t: String, big: Boolean = false) = TextView(this).apply {
+        text = t
+        textSize = if (big) 20f else 12f
+        setTextColor(if (big) C_TEXT else C_MUTED)
+        if (big) typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        letterSpacing = if (big) 0.02f else 0.05f
+    }
+    private fun edit(hint: String, num: Boolean = false, text: String = "", ro: Boolean = false) = EditText(this).apply {
+        this.hint = hint
+        if (num) inputType = InputType.TYPE_CLASS_NUMBER
+        setText(text)
+        setTextColor(C_TEXT); setHintTextColor(C_MUTED)
+        setBackgroundColor(C_SURFACE)
+        val gd = GradientDrawable().apply {
+            setColor(C_SURFACE); setStroke(2, C_BORDER); cornerRadius = 20f
+        }
+        background = gd
+        setPadding(24, 20, 24, 20)
+        textSize = 14f
+        if (ro) { keyListener = null; setTextIsSelectable(true); setTextColor(C_GOLD) }
+    }
+    private fun button(t: String, big: Boolean = false, primary: Boolean = false) = Button(this).apply {
+        text = t
+        textSize = if (big) 16f else 14f
+        if (primary) {
+            setBackgroundColor(C_PRIMARY); setTextColor(Color.WHITE)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        } else {
+            setBackgroundColor(C_SURFACE); setTextColor(C_TEXT)
+        }
+        val gd = GradientDrawable().apply {
+            setColor(if (primary) C_PRIMARY else C_SURFACE)
+            setStroke(2, if (primary) C_ACCENT else C_BORDER)
+            cornerRadius = 26f
+        }
+        background = gd
+        setPadding(28, if (big) 26 else 18, 28, if (big) 26 else 18)
+        isAllCaps = false
+    }
+    private fun card() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = GradientDrawable().apply {
+            setColor(C_SURFACE); setStroke(2, C_BORDER); cornerRadius = 28f
+        }
+        setPadding(28, 24, 28, 24)
+    }
+    private fun divider() = TextView(this).apply {
+        setBackgroundColor(C_BORDER)
+        layoutParams = LinearLayout.LayoutParams(-1, 2)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "高校认证 v1.0"
+        title = "高校认证 v1.1"
 
-        fun label(t: String, big: Boolean = false) = TextView(this).apply {
-            text = t
-            textSize = if (big) 15f else 12f
-            setTextColor(if (big) Color.BLACK else Color.GRAY)
-        }
-        fun edit(hint: String, num: Boolean = false, text: String = "") = EditText(this).apply {
-            this.hint = hint
-            if (num) inputType = InputType.TYPE_CLASS_NUMBER
-            setText(text)
-        }
-        fun button(t: String, big: Boolean = false) = Button(this).apply {
-            text = t
-            if (big) textSize = 15f
-        }
-
-        // ===== 主容器 =====
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 20, 28, 20)
+            setBackgroundColor(C_BG)
+            setPadding(32, 28, 32, 24)
         }
-        val scroll = ScrollView(this).apply { addView(root) }
+        val scroll = ScrollView(this).apply { setBackgroundColor(C_BG); addView(root) }
         setContentView(scroll)
 
-        // ===== 标题（对齐 exe）=====
+        // ===== 标题 =====
         root.addView(label("高校认证", big = true))
         root.addView(TextView(this).apply {
             text = "QQ 学信网认证辅助 · 手机端"
-            textSize = 11f; setTextColor(Color.GRAY)
+            textSize = 11f; setTextColor(C_MUTED); letterSpacing = 0.08f
         })
 
-        // ===== 设备码（只读 + 复制）=====
-        root.addView(label("设备码（发给管理员换授权码）"))
+        // ===== 设备码卡片 =====
+        val devCard = card()
+        devCard.addView(label("设备码（发给管理员换授权码）"))
         val devCode = DeviceId.fingerprint(this)
-        val rowDev = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        edDevCode = edit("", text = devCode).apply { keyListener = null; setTextIsSelectable(true) }
+        val rowDev = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        edDevCode = edit("", text = devCode, ro = true)
         edDevCode.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         val btnCopy = button("复制")
         rowDev.addView(edDevCode); rowDev.addView(btnCopy)
-        root.addView(rowDev)
-        btnCopy.setOnClickListener {
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("devcode", devCode))
-            Toast.makeText(this, "已复制设备码", Toast.LENGTH_SHORT).show()
-        }
-        root.addView(divider())
+        devCard.addView(rowDev)
+        root.addView(devCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 24 })
 
-        // ===== 授权码 =====
-        root.addView(label("授权码"))
+        // ===== 授权码卡片 =====
+        val codeCard = card()
+        codeCard.addView(label("授权码"))
         edCode = edit("CHSI-XXXX-XXXX-XXXX", text = pref("code"))
-        root.addView(edCode)
-
-        btnVerify = button("验  证", big = true).apply {
-            layoutParams = LinearLayout.LayoutParams(-1, (56 * resources.displayMetrics.density).toInt())
+        codeCard.addView(edCode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
+        btnVerify = button("验  证", big = true, primary = true).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, (60 * resources.displayMetrics.density).toInt()).apply { topMargin = 20 }
         }
-        root.addView(btnVerify)
+        codeCard.addView(btnVerify)
+        root.addView(codeCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
 
-        // ===== 验证通过才展开的区域 =====
+        // ===== 验证通过才展开 =====
         boxFields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = LinearLayout.GONE
         }
-        root.addView(boxFields)
+        root.addView(boxFields, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
 
-        boxFields.addView(label("姓名"))
+        val fCard = card()
+        fCard.addView(label("填写信息"))
         edName = edit("姓名", text = pref("name"))
-        boxFields.addView(edName)
+        fCard.addView(edName, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 14 })
 
-        boxFields.addView(label("性别"))
+        fCard.addView(label("性别"))
         val rg = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-        rbMale = RadioButton(this).apply { text = "男"; isChecked = pref("gender") != "女" }
-        rbFemale = RadioButton(this).apply { text = "女"; isChecked = pref("gender") == "女" }
+        rbMale = RadioButton(this).apply { text = "男"; isChecked = pref("gender") != "女"; setTextColor(C_TEXT) }
+        rbFemale = RadioButton(this).apply { text = "女"; isChecked = pref("gender") == "女"; setTextColor(C_TEXT) }
         rg.addView(rbMale); rg.addView(rbFemale)
-        boxFields.addView(rg)
+        fCard.addView(rg, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
 
-        boxFields.addView(label("照片（4 寸证件照）"))
+        fCard.addView(label("照片（4 寸证件照）"))
         val rowPhoto = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         btnPhoto = button("选择照片…")
-        tvPhotoName = TextView(this).apply { textSize = 12f; setTextColor(Color.GRAY); text = pref("pname") }
-        rowPhoto.addView(btnPhoto)
-        rowPhoto.addView(tvPhotoName)
-        boxFields.addView(rowPhoto)
+        tvPhotoName = TextView(this).apply { textSize = 12f; setTextColor(C_MUTED); text = pref("pname") }
+        rowPhoto.addView(btnPhoto); rowPhoto.addView(tvPhotoName)
+        fCard.addView(rowPhoto, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 10 })
+        boxFields.addView(fCard)
 
+        val aCard = card()
+        aCard.addView(label("无线调试配对（首次需填，配对后可清空）"))
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         edPairPort = edit("配对端口", num = true, text = pref("pp")).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
-        edPairCode = edit("配对码(6位)", text = pref("pc")).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
+        edPairCode = edit("配对码(6位)", text = pref("pc")).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = 12 } }
         row.addView(edPairPort); row.addView(edPairCode)
-        boxFields.addView(label("无线调试配对（首次需填，配对后可清空）"))
-        boxFields.addView(row)
-
-        boxFields.addView(label("无线调试连接端口（无线调试页显示的 IP:端口 里的端口）"))
+        aCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
+        aCard.addView(label("无线调试连接端口（无线调试页 IP:端口 里的端口）"))
         edConnectPort = edit("连接端口", num = true, text = pref("cp"))
-        boxFields.addView(edConnectPort)
-
+        aCard.addView(edConnectPort, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
         val rowBtn = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        btnStart = button("启动")
-        val btnStop = button("停止")
+        btnStart = button("启 动", big = true, primary = true)
+        val btnStop = button("停 止", big = true)
         rowBtn.addView(btnStart); rowBtn.addView(btnStop)
-        boxFields.addView(rowBtn)
+        aCard.addView(rowBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
+        boxFields.addView(aCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
 
         // ===== 状态 + 日志 =====
-        tvStatus = TextView(this).apply { textSize = 14f; setTextColor(Color.parseColor("#1565C0")); text = TunnelService.status }
-        root.addView(tvStatus)
-        tvLog = TextView(this).apply { textSize = 11f; text = TunnelService.logBuf.toString() }
+        tvStatus = TextView(this).apply {
+            textSize = 14f; setTextColor(C_GOLD); text = TunnelService.status
+            typeface = Typeface.MONOSPACE
+        }
+        root.addView(tvStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
+        tvLog = TextView(this).apply {
+            textSize = 11f; setTextColor(C_MUTED); typeface = Typeface.MONOSPACE
+            text = TunnelService.logBuf.toString()
+        }
         val sv = ScrollView(this).apply { addView(tvLog) }
-        root.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = 12 })
 
         // ===== 事件 =====
         btnVerify.setOnClickListener {
@@ -268,11 +321,6 @@ class MainActivity : Activity() {
                 toast("读取失败：${e.message}")
             }
         }
-    }
-
-    private fun divider() = TextView(this).apply {
-        setBackgroundColor(Color.parseColor("#DDDDDD"))
-        layoutParams = LinearLayout.LayoutParams(-1, 2)
     }
 
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
