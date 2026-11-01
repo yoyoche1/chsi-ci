@@ -1,4 +1,4 @@
-// 高校认证 v9.0 —— Rust 哑终端（frp + TLS pin + 云端注入）
+// 高校认证 v9.1 —— Rust 哑终端（frp + TLS pin + 云端注入）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -16,7 +16,7 @@ const SERVER_HOST: &str = "vip.bj.frp.one";
 const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
-const VER_TAG: &str = "cs-9.0";
+const VER_TAG: &str = "cs-9.1";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -211,6 +211,45 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
 
+// v9.1：隧道加固——握手签名 + 整帧流加密（与服务器一致）
+const TUNNEL_KEY: &str = "7f3a91c25be04d68a1c9f2e8b6d47053";
+
+fn tunnel_sig(token: &str, device: &str) -> String {
+    use hmac::{Hmac, Mac};
+    type H = Hmac<Sha256>;
+    let mut mac = H::new_from_slice(TUNNEL_KEY.as_bytes()).unwrap();
+    mac.update(format!("{}|{}", token, device).as_bytes());
+    let out = mac.finalize().into_bytes();
+    let hex: String = out.iter().map(|b| format!("{:02x}", b)).collect();
+    hex[..32].to_string()
+}
+
+fn stream_key(token: &str) -> [u8; 32] {
+    let h = Sha256::digest(format!("{}|{}", TUNNEL_KEY, token).as_bytes());
+    let mut k = [0u8; 32];
+    k.copy_from_slice(&h);
+    k
+}
+
+fn xor_stream(buf: &[u8], key: &[u8; 32]) -> Vec<u8> {
+    let mut out = vec![0u8; buf.len()];
+    let mut counter: u32 = 0;
+    let mut off = 0usize;
+    while off < buf.len() {
+        let mut ikm = Vec::with_capacity(36);
+        ikm.extend_from_slice(key);
+        ikm.extend_from_slice(&counter.to_be_bytes());
+        let ks = Sha256::digest(&ikm);
+        for i in 0..32 {
+            if off + i >= buf.len() { break; }
+            out[off + i] = buf[off + i] ^ ks[i];
+        }
+        counter += 1;
+        off += 32;
+    }
+    out
+}
+
 const T_OPEN: u8 = 0x01;
 const T_DATA: u8 = 0x02;
 const T_CLOSE: u8 = 0x03;
@@ -286,7 +325,7 @@ fn frame(t: u8, id: u32, body: &[u8]) -> Vec<u8> {
     v
 }
 
-async fn tunnel_loop(url: String, ports: Vec<u16>, sh: Arc<Mutex<Shared>>) {
+async fn tunnel_loop(url: String, ports: Vec<u16>, token: String, sh: Arc<Mutex<Shared>>) {
     loop {
         match tokio_tungstenite::connect_async_tls_with_config(
             &url,
@@ -298,18 +337,21 @@ async fn tunnel_loop(url: String, ports: Vec<u16>, sh: Arc<Mutex<Shared>>) {
                 set_status(&sh, "● 已授权 · 注入运行中");
                 let (mut sink, mut stream) = ws.split();
                 let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
-                // v8.9：上报端口列表（LIST 帧）
+                let key = stream_key(&token);
+                // v8.9：上报端口列表（LIST 帧，走加密写队列）
                 {
                     let list = format!("[{}]", ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(","));
                     let mut f = Vec::with_capacity(5 + list.len());
                     f.push(0x04);
                     f.extend_from_slice(&0u32.to_be_bytes());
                     f.extend_from_slice(list.as_bytes());
-                    let _ = sink.send(Message::Binary(f.into())).await;
+                    let _ = tx.send(f).await;
                 }
+                let wkey = key;
                 let writer = tokio::spawn(async move {
                     while let Some(v) = rx.recv().await {
-                        if sink.send(Message::Binary(v.into())).await.is_err() { break; }
+                        let enc = xor_stream(&v, &wkey);
+                        if sink.send(Message::Binary(enc.into())).await.is_err() { break; }
                     }
                 });
                 let mut streams: std::collections::HashMap<u32, tokio::sync::mpsc::Sender<Vec<u8>>> =
@@ -321,6 +363,7 @@ async fn tunnel_loop(url: String, ports: Vec<u16>, sh: Arc<Mutex<Shared>>) {
                         Err(_) => break,
                         _ => continue,
                     };
+                    let data = xor_stream(&data, &key);   // v9.1：解密整帧
                     if data.len() < 5 { continue; }
                     let t = data[0];
                     let id = u32::from_be_bytes([data[1], data[2], data[3], data[4]]);
@@ -498,10 +541,11 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
         pnum += 1;
     }
 
-    let url = format!("{}?token={}&device={}", SERVER_WS, token, devcode);
+    let url = format!("{}?token={}&device={}&sig={}", SERVER_WS, token, devcode, tunnel_sig(&token, &devcode));
+    let token2 = token.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
-        rt.block_on(tunnel_loop(url, ports, sh));
+        rt.block_on(tunnel_loop(url, ports, token2, sh));
     });
 }
 
