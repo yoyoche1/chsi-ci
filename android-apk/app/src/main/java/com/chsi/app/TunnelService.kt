@@ -32,8 +32,8 @@ class TunnelService : Service() {
         const val EXTRA_CONNECT_PORT = "connect_port"
 
         const val SERVER_HOST = "vip.bj.frp.one"
-        const val SERVER_CHECK = "https://vip.bj.frp.one:50971/check"
-        const val SERVER_PREPARE = "https://vip.bj.frp.one:50971/prepare"
+        const val SERVER_CHECK = "https://vip.bj.frp.one:50970/check"
+        const val SERVER_PREPARE = "https://vip.bj.frp.one:50970/prepare"
         const val SERVER_WS = "wss://vip.bj.frp.one:50970/tunnel"
         // SPKI pin（与自签证书一致，sha256/xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=）
         const val SPKI_PIN = "sha256/xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA="

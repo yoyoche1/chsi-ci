@@ -8,7 +8,7 @@
 
     <application
         android:label="高校认证"
-        android:icon="@android:drawable/ic_lock_idle_lock"
+        android:icon="@mipmap/ic_launcher"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="false"
         android:allowBackup="false">
