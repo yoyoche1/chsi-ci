@@ -1,4 +1,4 @@
-// 高校认证 v8.4 —— Rust 哑终端（frp + TLS pin + 云端注入）
+// 高校认证 v8.8 —— Rust 哑终端（frp + TLS pin + 云端注入）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -16,7 +16,7 @@ const SERVER_HOST: &str = "vip.bj.frp.one";
 const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
-const VER_TAG: &str = "cs-8.7";
+const VER_TAG: &str = "cs-8.8";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -473,7 +473,6 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
         return;
     }
     let _ = adb(&["-s", &dev, "forward", "tcp:19222", &format!("localabstract:{}", socks[0])]);
-    log_line(&sh, &format!("已转发调试口 → 127.0.0.1:19222（{}）", socks[0].chars().take(32).collect::<String>()));
 
     let url = format!("{}?token={}&device={}", SERVER_WS, token, devcode);
     std::thread::spawn(move || {
@@ -629,6 +628,17 @@ fn rfd_pick() -> Option<std::path::PathBuf> {
     if p.is_empty() { None } else { Some(std::path::PathBuf::from(p)) }
 }
 
+// v8.8：窗口/任务栏图标（内嵌 icon.ico）
+fn app_icon() -> egui::IconData {
+    match image::load_from_memory(include_bytes!("../assets/icon.ico")) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            egui::IconData { width: rgba.width(), height: rgba.height(), rgba: rgba.into_raw() }
+        }
+        Err(_) => egui::IconData { width: 1, height: 1, rgba: vec![0, 0, 0, 0] },
+    }
+}
+
 fn main() -> eframe::Result<()> {
     if std::env::args().any(|a| a == "--selftest") {
         if let Some(d) = pick_device() { let _ = device_code(&d); }
@@ -636,11 +646,12 @@ fn main() -> eframe::Result<()> {
     }
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_icon(app_icon())
             .with_inner_size([500.0, 680.0])
             .with_min_inner_size([460.0, 560.0]),
         ..Default::default()
     };
-    eframe::run_native("高校认证 v8.7", opts, Box::new(|cc| {
+    eframe::run_native("高校认证 v8.8", opts, Box::new(|cc| {
         install_cjk_font(&cc.egui_ctx);
         Box::new(App::default())
     }))
