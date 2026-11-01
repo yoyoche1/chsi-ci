@@ -363,7 +363,6 @@ async fn tunnel_loop(url: String, ports: Vec<u16>, sh: Arc<Mutex<Shared>>) {
                         0x05 => {
                             // v9.0：云端通知全部注入完成——轮换设备码 + 3 秒退出（与 .NET 一致）
                             set_status(&sh, "● 全部注入完成，3 秒后自动退出");
-                            log_line(&sh, "全部注入完成（验证码报告页已改写），轮换设备码并退出");
                             mark_used(used_count() + 1);
                             std::thread::sleep(Duration::from_secs(3));
                             std::process::exit(0);
