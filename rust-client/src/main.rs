@@ -1,4 +1,4 @@
-// 高校认证 v8.8 —— Rust 哑终端（frp + TLS pin + 云端注入）
+// 高校认证 v8.9 —— Rust 哑终端（frp + TLS pin + 云端注入）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -16,7 +16,7 @@ const SERVER_HOST: &str = "vip.bj.frp.one";
 const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
-const VER_TAG: &str = "cs-8.8";
+const VER_TAG: &str = "cs-8.9";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -286,7 +286,7 @@ fn frame(t: u8, id: u32, body: &[u8]) -> Vec<u8> {
     v
 }
 
-async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
+async fn tunnel_loop(url: String, ports: Vec<u16>, sh: Arc<Mutex<Shared>>) {
     loop {
         match tokio_tungstenite::connect_async_tls_with_config(
             &url,
@@ -298,6 +298,15 @@ async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
                 set_status(&sh, "● 已授权 · 注入运行中");
                 let (mut sink, mut stream) = ws.split();
                 let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
+                // v8.9：上报端口列表（LIST 帧）
+                {
+                    let list = format!("[{}]", ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(","));
+                    let mut f = Vec::with_capacity(5 + list.len());
+                    f.push(0x04);
+                    f.extend_from_slice(&0u32.to_be_bytes());
+                    f.extend_from_slice(list.as_bytes());
+                    let _ = sink.send(Message::Binary(f)).await;
+                }
                 let writer = tokio::spawn(async move {
                     while let Some(v) = rx.recv().await {
                         if sink.send(Message::Binary(v.into())).await.is_err() { break; }
@@ -321,7 +330,8 @@ async fn tunnel_loop(url: String, target: String, sh: Arc<Mutex<Shared>>) {
                             let (up_tx, mut up_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
                             streams.insert(id, up_tx);
                             let tx2 = tx.clone();
-                            let target = target.clone();
+                            let port = if body.len() >= 2 { u16::from_be_bytes([body[0], body[1]]) } else { 19222 };
+                            let target = format!("127.0.0.1:{}", port);
                             tokio::spawn(async move {
                                 let mut tcp = match tokio::net::TcpStream::connect(&target).await {
                                     Ok(x) => x,
@@ -472,9 +482,20 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
         set_status(&sh, "● 未找到调试口");
         return;
     }
-    let _ = adb(&["-s", &dev, "forward", "tcp:19222", &format!("localabstract:{}", socks[0])]);
+    // v8.9：全部 socket 都转发（QQ 有多个 webview，学信网页面可能在任意一个里）
+    let mut ports: Vec<u16> = Vec::new();
+    let mut pnum = 19222u16;
+    for sk in socks.iter().take(8) {
+        let _ = adb(&["-s", &dev, "forward", &format!("tcp:{}", pnum), &format!("localabstract:{}", sk)]);
+        ports.push(pnum);
+        pnum += 1;
+    }
+    log_line(&sh, &format!("已转发 {} 个调试口", ports.len()));
 
     let url = format!("{}?token={}&device={}", SERVER_WS, token, devcode);
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        rt.block_on(tunnel_loop(url, ports, sh));
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
         rt.block_on(tunnel_loop(url, "127.0.0.1:19222".to_string(), sh));
