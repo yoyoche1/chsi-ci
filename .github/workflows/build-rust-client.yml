@@ -21,6 +21,23 @@ jobs:
       - name: Build release
         working-directory: rust-client
         run: cargo build --release
+      # v9.2：Authenticode 自签——防静默换文件（有真证书可放 secrets CHSI_SIGN_PFX 替换）
+      - name: Authenticode sign (self-signed or provided PFX)
+        shell: pwsh
+        run: |
+          $exe = 'rust-client\target\release\chsi-rust.exe'
+          if ($env:CHSI_SIGN_PFX) {
+            [IO.File]::WriteAllBytes('sign.pfx', [Convert]::FromBase64String($env:CHSI_SIGN_PFX))
+          } else {
+            openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout sign.key -out sign.crt -subj '/CN=ChsiTool Self-Sign' 2>$null
+            openssl pkcs12 -export -out sign.pfx -inkey sign.key -in sign.crt -passout pass:chsi2026
+          }
+          $signtool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Select-Object -First 1).FullName
+          & $signtool sign /fd sha256 /a /f sign.pfx /p chsi2026 $exe
+          if ($LASTEXITCODE -ne 0) { Write-Host 'SIGN FAILED'; exit 1 }
+          Write-Host 'SIGN OK'
+        env:
+          CHSI_SIGN_PFX: ${{{{ secrets.CHSI_SIGN_PFX }}}}
       - name: Bundle zip
         shell: pwsh
         run: |
