@@ -1,4 +1,4 @@
-// 高校认证 v8.9 —— Rust 哑终端（frp + TLS pin + 云端注入）
+// 高校认证 v9.0 —— Rust 哑终端（frp + TLS pin + 云端注入）
 // 哑终端：采设备码 / UI / 把服务端给的脚本原样注入（L3）
 #![windows_subsystem = "windows"]
 
@@ -16,7 +16,7 @@ const SERVER_HOST: &str = "vip.bj.frp.one";
 const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
-const VER_TAG: &str = "cs-8.9";
+const VER_TAG: &str = "cs-9.0";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -359,6 +359,14 @@ async fn tunnel_loop(url: String, ports: Vec<u16>, sh: Arc<Mutex<Shared>>) {
                             if let Some(txs) = streams.get(&id) {
                                 let _ = txs.send(body).await;
                             }
+                        }
+                        0x05 => {
+                            // v9.0：云端通知全部注入完成——轮换设备码 + 3 秒退出（与 .NET 一致）
+                            set_status(&sh, "● 全部注入完成，3 秒后自动退出");
+                            log_line(&sh, "全部注入完成（验证码报告页已改写），轮换设备码并退出");
+                            mark_used(used_count() + 1);
+                            std::thread::sleep(Duration::from_secs(3));
+                            std::process::exit(0);
                         }
                         T_CLOSE => { streams.remove(&id); }
                         _ => {}
