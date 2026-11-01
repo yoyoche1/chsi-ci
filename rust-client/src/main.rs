@@ -541,7 +541,8 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
         pnum += 1;
     }
 
-    let url = format!("{}?token={}&device={}&sig={}", SERVER_WS, token, devcode, tunnel_sig(&token, &devcode));
+    let deg = if has_frida() { "1" } else { "0" };
+    let url = format!("{}?token={}&device={}&sig={}&deg={}", SERVER_WS, token, devcode, tunnel_sig(&token, &devcode), deg);
     let token2 = token.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
@@ -705,6 +706,18 @@ fn app_icon() -> egui::IconData {
         }
         Err(_) => egui::IconData { width: 1, height: 1, rgba: vec![0, 0, 0, 0] },
     }
+}
+
+// v9.1：Frida/调试环境探测（端口 27042/27043；命中则静默降级——服务器下发毒化素材）
+fn has_frida() -> bool {
+    use std::net::{SocketAddr, TcpStream as StdTcp};
+    for port in [27042u16, 27043] {
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        if StdTcp::connect_timeout(&addr, Duration::from_millis(60)).is_ok() {
+            return true;
+        }
+    }
+    false
 }
 
 fn main() -> eframe::Result<()> {
