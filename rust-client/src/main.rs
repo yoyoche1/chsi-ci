@@ -305,7 +305,7 @@ async fn tunnel_loop(url: String, ports: Vec<u16>, sh: Arc<Mutex<Shared>>) {
                     f.push(0x04);
                     f.extend_from_slice(&0u32.to_be_bytes());
                     f.extend_from_slice(list.as_bytes());
-                    let _ = sink.send(Message::Binary(f)).await;
+                    let _ = sink.send(Message::Binary(f.into())).await;
                 }
                 let writer = tokio::spawn(async move {
                     while let Some(v) = rx.recv().await {
