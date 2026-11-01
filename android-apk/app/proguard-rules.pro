@@ -1,6 +1,0 @@
--repackageclasses ''
--allowaccessmodification
--optimizationpasses 5
--dontwarn okhttp3.**
--dontwarn okio.**
--keep class com.chsi.app.** { *; }
