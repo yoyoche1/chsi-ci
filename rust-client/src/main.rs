@@ -16,7 +16,7 @@ const SERVER_HOST: &str = "vip.bj.frp.one";
 const SERVER_WS: &str = "wss://vip.bj.frp.one:50970/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
 const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
-const VER_TAG: &str = "cs-8.6";
+const VER_TAG: &str = "cs-8.7";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // ============ adb（内置）============
@@ -640,7 +640,7 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([460.0, 560.0]),
         ..Default::default()
     };
-    eframe::run_native("高校认证 v8.6", opts, Box::new(|cc| {
+    eframe::run_native("高校认证 v8.7", opts, Box::new(|cc| {
         install_cjk_font(&cc.egui_ctx);
         Box::new(App::default())
     }))
