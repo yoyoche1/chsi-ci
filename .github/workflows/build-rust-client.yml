@@ -37,7 +37,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Host 'SIGN FAILED'; exit 1 }
           Write-Host 'SIGN OK'
         env:
-          CHSI_SIGN_PFX: ${{{{ secrets.CHSI_SIGN_PFX }}}}
+          CHSI_SIGN_PFX: ${{ secrets.CHSI_SIGN_PFX }}
       - name: Bundle zip
         shell: pwsh
         run: |
