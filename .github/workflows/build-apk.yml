@@ -17,8 +17,10 @@ jobs:
       - name: SDK 组件（runner 预装 SDK，直接 sdkmanager）
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null
+          SM=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          ls -la $SM || SM=$(find $ANDROID_HOME -name sdkmanager -type f | head -1)
+          yes | $SM --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1 || true
+          $SM --sdk_root=$ANDROID_HOME "platforms;android-34" "build-tools;34.0.0" > /dev/null
 
       - name: Fetch arm64 adb (static, from android-sdk-tools releases)
         run: |
