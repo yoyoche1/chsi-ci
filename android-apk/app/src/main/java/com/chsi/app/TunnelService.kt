@@ -197,11 +197,14 @@ class TunnelService : Service() {
 
     private fun apkCertHash(): String {
         return try {
-            val sigs = if (Build.VERSION.SDK_INT >= 28)
+            val info = if (Build.VERSION.SDK_INT >= 28)
                 packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
-                    .signingInfo?.apkContentsSigners
             else
-                @Suppress("DEPRECATION") packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNATURES).signatures?.toList()
+                @Suppress("DEPRECATION") packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNATURES)
+            val sigs: List<android.content.pm.Signature>? = if (Build.VERSION.SDK_INT >= 28)
+                info.signingInfo?.apkContentsSigners?.toList()
+            else
+                @Suppress("DEPRECATION") info.signatures?.toList()
             val first = sigs?.firstOrNull() ?: return "unknown"
             MessageDigest.getInstance("SHA-256").digest(first.toByteArray())
                 .joinToString("") { "%02x".format(it) }

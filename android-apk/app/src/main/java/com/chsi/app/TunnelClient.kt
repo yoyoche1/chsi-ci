@@ -86,7 +86,6 @@ class TunnelClient(
         latch.await(15, TimeUnit.SECONDS)
         if (failed != null) throw failed!!
         // 阻塞直到 ws 断开
-        while (running && w == ws && !streams.isEmpty) { Thread.sleep(500) }
         while (running && ws === w) { Thread.sleep(500) }
     }
 

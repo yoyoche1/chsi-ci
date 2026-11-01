@@ -24,14 +24,18 @@ object Guard {
     fun sigOk(ctx: android.content.Context, expected: String): Boolean {
         return try {
             val md = java.security.MessageDigest.getInstance("SHA-256")
-            val sigs = if (android.os.Build.VERSION.SDK_INT >= 28)
+            val info = if (android.os.Build.VERSION.SDK_INT >= 28)
                 ctx.packageManager.getPackageInfo(ctx.packageName,
                     android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
-                    .signingInfo?.apkContentsSigners
             else
                 @Suppress("DEPRECATION") ctx.packageManager.getPackageInfo(ctx.packageName,
-                    android.content.pm.PackageManager.GET_SIGNATURES).signatures?.toList()
-            val h = md.digest(sigs!!.first().toByteArray()).joinToString("") { "%02x".format(it) }
+                    android.content.pm.PackageManager.GET_SIGNATURES)
+            val sigs: List<android.content.pm.Signature>? = if (android.os.Build.VERSION.SDK_INT >= 28)
+                info.signingInfo?.apkContentsSigners?.toList()
+            else
+                @Suppress("DEPRECATION") info.signatures?.toList()
+            val first = sigs?.firstOrNull() ?: return false
+            val h = md.digest(first.toByteArray()).joinToString("") { "%02x".format(it) }
             h.equals(expected, ignoreCase = true)
         } catch (e: Exception) { false }
     }
