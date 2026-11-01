@@ -677,7 +677,7 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([460.0, 560.0]),
         ..Default::default()
     };
-    eframe::run_native("高校认证 v8.8", opts, Box::new(|cc| {
+    eframe::run_native("高校认证 v9.0", opts, Box::new(|cc| {
         install_cjk_font(&cc.egui_ctx);
         Box::new(App::default())
     }))
