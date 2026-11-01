@@ -498,7 +498,6 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
         ports.push(pnum);
         pnum += 1;
     }
-    log_line(&sh, &format!("已转发 {} 个调试口", ports.len()));
 
     let url = format!("{}?token={}&device={}", SERVER_WS, token, devcode);
     std::thread::spawn(move || {
