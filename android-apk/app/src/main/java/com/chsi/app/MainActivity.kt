@@ -124,7 +124,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "高校认证 v1.1"
+        title = "高校认证 v1.2"
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

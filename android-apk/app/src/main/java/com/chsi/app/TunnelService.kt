@@ -142,7 +142,7 @@ class TunnelService : Service() {
         val nonce = "a" + System.currentTimeMillis()
         val checkBody = JSONObject().apply {
             put("platform", "android"); put("code", code); put("device", device)
-            put("nonce", nonce); put("ver", "cs-apk-1.0"); put("exehash", exehash)
+            put("nonce", nonce); put("ver", "cs-apk-1.1"); put("exehash", exehash)
         }.toString()
         var resp = postJson(SERVER_CHECK, checkBody)
         if (!resp.optBoolean("ok")) {
@@ -159,7 +159,7 @@ class TunnelService : Service() {
         // /prepare 拿 token
         val prepBody = JSONObject().apply {
             put("device", device); put("code", code)
-            put("nonce", "b" + System.currentTimeMillis()); put("ver", "cs-apk-1.0")
+            put("nonce", "b" + System.currentTimeMillis()); put("ver", "cs-apk-1.1")
             put("exehash", exehash); put("name", name); put("gender", gender); put("photo", photo)
         }.toString()
         resp = postJson(SERVER_PREPARE, prepBody)
