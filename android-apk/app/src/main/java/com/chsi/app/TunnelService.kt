@@ -192,6 +192,27 @@ class TunnelService : Service() {
             })
         tunnel = t
         t.start()
+
+        // v4.9.4：周期重扫——QQ 重开后 webview 调试口（带 PID）会变，旧转发失效。
+        thread(name = "sock-rescan") {
+            while (true) {
+                Thread.sleep(10_000)
+                try {
+                    val socks2 = shell.findDevtoolsSockets()
+                    if (socks2.isEmpty()) continue
+                    val newPorts = mutableListOf<Int>()
+                    var p2 = 19222
+                    socks2.take(8).forEach { sk ->
+                        shell.forward(p2, sk)
+                        newPorts.add(p2); p2++
+                    }
+                    if (newPorts != t.livePorts) {
+                        t.sendPortUpdate(newPorts)
+                        appendLog("调试口重扫：" + newPorts.size + " 个（已更新云端）")
+                    }
+                } catch (e: Exception) { /* 设备暂离，下轮再试 */ }
+            }
+        }
     }
 
     private fun postJson(url: String, body: String): JSONObject {

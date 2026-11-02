@@ -25,6 +25,15 @@ class TunnelClient(
 ) {
     @Volatile private var ws: WebSocket? = null
     @Volatile private var running = true
+    @Volatile var livePorts: List<Int> = ports   // v4.9.4：周期重扫后可更新
+
+    // v4.9.4：重扫后重发 LIST 帧（服务端更新端口表）
+    fun sendPortUpdate(newPorts: List<Int>) {
+        livePorts = newPorts
+        val w = ws ?: return
+        val list = "[" + newPorts.joinToString(",") + "]"
+        sendFrame(w, frame(0x04, 0, list.toByteArray()))
+    }
     private val streams = ConcurrentHashMap<Int, Socket>()
     private val key: ByteArray = Crypto.streamKey(token)
 
