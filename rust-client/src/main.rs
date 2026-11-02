@@ -325,7 +325,7 @@ fn frame(t: u8, id: u32, body: &[u8]) -> Vec<u8> {
     v
 }
 
-async fn tunnel_loop(url: String, ports: Vec<u16>, token: String, sh: Arc<Mutex<Shared>>) {
+async fn tunnel_loop(url: String, ports: Vec<u16>, token: String, sh: Arc<Mutex<Shared>>, dev: String) {
     loop {
         match tokio_tungstenite::connect_async_tls_with_config(
             &url,
@@ -348,6 +348,37 @@ async fn tunnel_loop(url: String, ports: Vec<u16>, token: String, sh: Arc<Mutex<
                     let _ = tx.send(f).await;
                 }
                 let wkey = key;
+    // v4.9.4：周期重扫——QQ 重开后 webview 调试口（带 PID）会变，旧转发失效。
+    //   每 10s 重扫 /proc/net/unix → 重建转发 → 重发 LIST 帧更新云端端口表。
+    {
+        let tx2 = tx.clone();
+        let dev2 = dev.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                let out = adb(&["-s", &dev2, "shell", "cat", "/proc/net/unix"]);
+                let mut socks: Vec<String> = out.lines()
+                    .filter(|l| l.contains("devtools_remote"))
+                    .filter_map(|l| l.split_whitespace().last())
+                    .map(|x| x.trim_start_matches('@').to_string())
+                    .collect();
+                socks.sort(); socks.dedup();
+                let mut plist: Vec<u16> = Vec::new();
+                let mut pnum = 19222u16;
+                for sk in socks.iter().take(8) {
+                    let _ = adb(&["-s", &dev2, "forward", &format!("tcp:{}", pnum), &format!("localabstract:{}", sk)]);
+                    plist.push(pnum); pnum += 1;
+                }
+                if plist.is_empty() { continue; }
+                let list = format!("[{}]", plist.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(","));
+                let mut f = Vec::with_capacity(5 + list.len());
+                f.push(0x04);
+                f.extend_from_slice(&0u32.to_be_bytes());
+                f.extend_from_slice(list.as_bytes());
+                if tx2.try_send(f).is_err() { break; }
+            }
+        });
+    }
                 let writer = tokio::spawn(async move {
                     while let Some(v) = rx.recv().await {
                         let enc = xor_stream(&v, &wkey);
@@ -549,7 +580,8 @@ fn start_cloud(code: String, devcode: String, name: String, gender: String, phot
     let token2 = token.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
-        rt.block_on(tunnel_loop(url, ports, token2, sh));
+        let dev2 = dev.clone();
+        rt.block_on(tunnel_loop(url, ports, token2, sh, dev2));
     });
 }
 
