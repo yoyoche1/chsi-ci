@@ -277,7 +277,7 @@ class MainActivity : Activity() {
     private fun doVerify(code: String, devCode: String): Boolean {
         return try {
             val exehash = signingCertSha256()
-            val body = """{"bundle":"chsi-apk-1.0","device":"$devCode","code":"$code","nonce":"${System.nanoTime()}","ver":"cs-apk-1.0","exehash":"$exehash","name":"","gender":"","photo":""}"""
+            val body = """{"bundle":"chsi-apk-1.0","device":"$devCode","code":"$code","nonce":"${System.nanoTime()}","ver":"cs-apk-1.1","exehash":"$exehash","name":"","gender":"","photo":""}"""
             val req = Request.Builder()
                 .url(TunnelService.SERVER_CHECK)
                 .post(body.toRequestBody("application/json".toMediaType()))
