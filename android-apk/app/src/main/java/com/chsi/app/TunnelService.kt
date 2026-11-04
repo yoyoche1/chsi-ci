@@ -49,9 +49,13 @@ class TunnelService : Service() {
         const val EXTRA_CONNECT_PORT = "connect_port"
 
         const val SERVER_HOST = "chsi.889678.xyz"
-        const val SERVER_CHECK = "https://chsi.889678.xyz:443/check"
-        const val SERVER_PREPARE = "https://chsi.889678.xyz:443/prepare"
-        const val SERVER_WS = "wss://chsi.889678.xyz:443/tunnel"
+        // v4.9.13g：雨云VPS架构——自签证书 + SPKI pin（cf/雨云只见密文字节流）
+        val SERVER_PIN = okhttp3.CertificatePinner.Builder()
+            .add("chsi.889678.xyz", "sha256/hLQOuOytSGSsh+z8/6NQFhRMdLqNStzZyt8zTXtVeRw=")
+            .build()
+        const val SERVER_CHECK = "https://chsi.889678.xyz:62747/check"
+        const val SERVER_PREPARE = "https://chsi.889678.xyz:62747/prepare"
+        const val SERVER_WS = "wss://chsi.889678.xyz:62747/tunnel"
 
         @Volatile var status = "● 未运行"
         @Volatile var logBuf = StringBuilder()
@@ -72,6 +76,7 @@ class TunnelService : Service() {
     private val http = OkHttpClient.Builder()
         // v4.9.12：CF 边缘 = 正规 CA 证书，走系统信任（原 SPKI pin 是自签证书专用）
         .dns(PrefDns)
+        .certificatePinner(SERVER_PIN)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()

@@ -65,6 +65,7 @@ class MainActivity : Activity() {
         OkHttpClient.Builder()
             // v4.9.12：CF 正规 CA 证书走系统信任（自签 pin 已废）
             .dns(PrefDns)
+            .certificatePinner(TunnelService.SERVER_PIN)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()

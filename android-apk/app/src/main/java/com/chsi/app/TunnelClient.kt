@@ -39,6 +39,7 @@ class TunnelClient(
 
     private val client = OkHttpClient.Builder()
         .dns(PrefDns)
+        .certificatePinner(TunnelService.SERVER_PIN)
         .pingInterval(25, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
         .build()
