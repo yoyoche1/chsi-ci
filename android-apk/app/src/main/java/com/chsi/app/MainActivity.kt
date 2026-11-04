@@ -151,6 +151,11 @@ class MainActivity : Activity() {
         val btnCopy = button("复制")
         rowDev.addView(edDevCode); rowDev.addView(btnCopy)
         devCard.addView(rowDev)
+        btnCopy.setOnClickListener {
+            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("dev", devCode))
+            android.widget.Toast.makeText(this, "设备码已复制", android.widget.Toast.LENGTH_SHORT).show()
+        }
         root.addView(devCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 24 })
 
         // ===== 授权码卡片 =====
