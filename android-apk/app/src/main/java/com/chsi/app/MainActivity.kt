@@ -63,8 +63,7 @@ class MainActivity : Activity() {
 
     private val http by lazy {
         OkHttpClient.Builder()
-            .certificatePinner(okhttp3.CertificatePinner.Builder()
-                .add(TunnelService.SERVER_HOST, TunnelService.SPKI_PIN).build())
+            // v4.9.12：CF 正规 CA 证书走系统信任（自签 pin 已废）
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
