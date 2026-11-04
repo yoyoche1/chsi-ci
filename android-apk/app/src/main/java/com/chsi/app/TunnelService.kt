@@ -31,10 +31,10 @@ class TunnelService : Service() {
         const val EXTRA_PAIR_CODE = "pair_code"
         const val EXTRA_CONNECT_PORT = "connect_port"
 
-        const val SERVER_HOST = "vip.bj.frp.one"
-        const val SERVER_CHECK = "https://vip.bj.frp.one:50970/check"
-        const val SERVER_PREPARE = "https://vip.bj.frp.one:50970/prepare"
-        const val SERVER_WS = "wss://vip.bj.frp.one:50970/tunnel"
+        const val SERVER_HOST = "chsi.chsiauth.dpdns.org"
+        const val SERVER_CHECK = "https://chsi.chsiauth.dpdns.org:443/check"
+        const val SERVER_PREPARE = "https://chsi.chsiauth.dpdns.org:443/prepare"
+        const val SERVER_WS = "wss://chsi.chsiauth.dpdns.org:443/tunnel"
         // SPKI pin（与自签证书一致，sha256/xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=）
         const val SPKI_PIN = "sha256/xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA="
 
@@ -55,8 +55,7 @@ class TunnelService : Service() {
     private var adb: AdbShell? = null
 
     private val http = OkHttpClient.Builder()
-        .certificatePinner(CertificatePinner.Builder()
-            .add(SERVER_HOST, SPKI_PIN).build())
+        // v4.9.12：CF 边缘 = 正规 CA 证书，走系统信任（原 SPKI pin 是自签证书专用）
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
