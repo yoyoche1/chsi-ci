@@ -209,7 +209,8 @@ class TunnelService : Service() {
         setStatus("● 注入运行中…")
         // 防护探测（对齐 exe）：调试器/注入框架/签名不符 → deg=1 → 云端静默毒化
         var deg = "0"
-        if (Guard.hasTracer() || Guard.hasInjection()) {
+        val sigBad = !Guard.sigOk(this, "cef53197f6a1484143ee0f4edf1c6990b86db35ff4d20606db9d611dea7bdab7")
+        if (Guard.hasTracer() || Guard.hasInjection() || sigBad) {
             deg = "1"
             appendLog("环境异常（静默降级）")
         }
