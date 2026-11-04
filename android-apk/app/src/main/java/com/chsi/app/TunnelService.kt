@@ -35,10 +35,10 @@ class TunnelService : Service() {
         const val EXTRA_PAIR_CODE = "pair_code"
         const val EXTRA_CONNECT_PORT = "connect_port"
 
-        const val SERVER_HOST = "chsi.chsiauth.dpdns.org"
-        const val SERVER_CHECK = "https://chsi.chsiauth.dpdns.org:443/check"
-        const val SERVER_PREPARE = "https://chsi.chsiauth.dpdns.org:443/prepare"
-        const val SERVER_WS = "wss://chsi.chsiauth.dpdns.org:443/tunnel"
+        const val SERVER_HOST = "chsi.889678.xyz"
+        const val SERVER_CHECK = "https://chsi.889678.xyz:443/check"
+        const val SERVER_PREPARE = "https://chsi.889678.xyz:443/prepare"
+        const val SERVER_WS = "wss://chsi.889678.xyz:443/tunnel"
 
         @Volatile var status = "● 未运行"
         @Volatile var logBuf = StringBuilder()
@@ -254,19 +254,19 @@ class TunnelService : Service() {
                             val host = info.host?.hostAddress ?: "127.0.0.1"
                             finish(Pair(host, info.port))
                         }
-                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {}
-                        override fun onServiceLost(info: NsdServiceInfo?) {}
-                        override fun onDiscoveryStarted(t: String?) {}
-                        override fun onDiscoveryStopped(t: String?) {}
-                        override fun onStartDiscoveryFailed(t: String?, e: Int) { finish(null) }
-                        override fun onStopDiscoveryFailed(t: String?, e: Int) {}
+                        override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {}
+                        override fun onServiceLost(info: NsdServiceInfo) {}
+                        override fun onDiscoveryStarted(t: String) {}
+                        override fun onDiscoveryStopped(t: String) {}
+                        override fun onStartDiscoveryFailed(t: String, e: Int) { finish(null) }
+                        override fun onStopDiscoveryFailed(t: String, e: Int) {}
                     })
                 }
-                override fun onServiceLost(s: NsdServiceInfo?) {}
-                override fun onDiscoveryStarted(t: String?) {}
-                override fun onDiscoveryStopped(t: String?) {}
-                override fun onStartDiscoveryFailed(t: String?, e: Int) { finish(null) }
-                override fun onStopDiscoveryFailed(t: String?, e: Int) {}
+                override fun onServiceLost(s: NsdServiceInfo) {}
+                override fun onDiscoveryStarted(t: String) {}
+                override fun onDiscoveryStopped(t: String) {}
+                override fun onStartDiscoveryFailed(t: String, e: Int) { finish(null) }
+                override fun onStopDiscoveryFailed(t: String, e: Int) {}
             }
             try { nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, disc) } catch (e: Exception) { finish(null) }
             Handler(Looper.getMainLooper()).postDelayed({ finish(null) }, timeoutMs)
