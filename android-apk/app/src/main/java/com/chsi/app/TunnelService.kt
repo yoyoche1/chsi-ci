@@ -11,6 +11,10 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import okhttp3.MediaType.Companion.toMediaType
+import android.content.Context
+import android.net.nsd.NsdManager
+import android.os.Handler
+import android.os.Looper
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -96,14 +100,30 @@ class TunnelService : Service() {
         adb = shell
         shell.startServer()
 
-        if (pairCode.isNotBlank() && pairPort > 0) {
+        var pPort = pairPort
+        var pHost = "127.0.0.1"
+        var cPort = connectPort
+        if (pairCode.isNotBlank() && pPort <= 0) {
+            setStatus("● 自动检测配对端口…")
+            nsdDiscover("_adb-tls-pairing._tcp.", 5000)?.let { (h, p) ->
+                pHost = h; pPort = p
+                appendLog("已自动发现配对端口 $h:$p")
+            } ?: appendLog("mDNS 未发现配对服务（配对对话框打开了吗？）")
+        }
+        if (pairCode.isNotBlank() && pPort > 0) {
             setStatus("● 无线调试配对…")
-            val p = shell.pair(pairPort, pairCode)
+            val p = if (pHost == "127.0.0.1") shell.pair(pPort, pairCode) else shell.pairHost(pHost, pPort, pairCode)
             appendLog("配对：" + p.trim().ifBlank { "(无输出)" })
         }
-        if (connectPort > 0) {
+        if (cPort <= 0) {
+            autoDetectConnect(shell)?.let {
+                cPort = it
+                appendLog("已自动发现连接端口 $it")
+            } ?: appendLog("自动检测未命中，请手动填连接端口")
+        }
+        if (cPort > 0) {
             setStatus("● 连接本机调试服务…")
-            val c = shell.connect(connectPort)
+            val c = shell.connect(cPort)
             appendLog("connect：" + c.trim().ifBlank { "(无输出)" })
         }
         val devs = shell.devices()
@@ -209,6 +229,92 @@ class TunnelService : Service() {
                 } catch (e: Exception) { /* 设备暂离，下轮再试 */ }
             }
         }
+    }
+
+    // ===== v4.9.13：无线调试自动检测 =====
+
+    // mDNS 发现服务（配对/连接），超时返回 null
+    private suspend fun nsdDiscover(serviceType: String, timeoutMs: Long): Pair<String, Int>? =
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            val nsd = getSystemService(Context.NSD_SERVICE) as NsdManager
+            var done = false
+            lateinit var disc: NsdManager.DiscoveryListener
+            fun finish(r: Pair<String, Int>?) {
+                if (done) return
+                done = true
+                try { nsd.stopServiceDiscovery(disc) } catch (_: Exception) {}
+                if (cont.isActive) cont.resume(r, null)
+            }
+            disc = object : NsdManager.DiscoveryListener {
+                override fun onServiceFound(s: NsdServiceInfo) {
+                    if (done) return
+                    nsd.resolveService(s, object : NsdManager.ResolveListener {
+                        override fun onServiceResolved(info: NsdServiceInfo) {
+                            val host = info.host?.hostAddress ?: "127.0.0.1"
+                            finish(Pair(host, info.port))
+                        }
+                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {}
+                        override fun onServiceLost(info: NsdServiceInfo?) {}
+                        override fun onDiscoveryStarted(t: String?) {}
+                        override fun onDiscoveryStopped(t: String?) {}
+                        override fun onStartDiscoveryFailed(t: String?, e: Int) { finish(null) }
+                        override fun onStopDiscoveryFailed(t: String?, e: Int) {}
+                    })
+                }
+                override fun onServiceLost(s: NsdServiceInfo?) {}
+                override fun onDiscoveryStarted(t: String?) {}
+                override fun onDiscoveryStopped(t: String?) {}
+                override fun onStartDiscoveryFailed(t: String?, e: Int) { finish(null) }
+                override fun onStopDiscoveryFailed(t: String?, e: Int) {}
+            }
+            try { nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, disc) } catch (e: Exception) { finish(null) }
+            Handler(Looper.getMainLooper()).postDelayed({ finish(null) }, timeoutMs)
+        }
+
+    // 连接端口自动检测：mDNS → 回环 adb 端口扫描兜底
+    private suspend fun autoDetectConnect(shell: AdbShell): Int? {
+        appendLog("自动检测：mDNS 发现 _adb-tls-connect …")
+        nsdDiscover("_adb-tls-connect._tcp.", 4000)?.let { (h, p) ->
+            appendLog("mDNS 发现 $h:$p，尝试 adb connect …")
+            val out = shell.connectHost(h, p)
+            appendLog("connect：" + out.trim().ifBlank { "(无输出)" })
+            if (out.contains("connected to", true)) return p
+        }
+        appendLog("mDNS 未命中，回环扫描 adb 端口（约 20 秒）…")
+        setStatus("● 回环扫描调试口…")
+        val found = java.util.concurrent.atomic.AtomicInteger(-1)
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(256)
+        val futures = mutableListOf<java.util.concurrent.Future<*>>()
+        val pkt = java.nio.ByteBuffer.allocate(24)
+        pkt.putInt(0x434E584E); pkt.putInt(0x01000001); pkt.putInt(0x00100000)
+        pkt.putInt(0); pkt.putInt(0); pkt.putInt(0x434E584E.inv())
+        val cnxn = pkt.array()
+        for (p in 32768..60999) {
+            futures.add(pool.submit {
+                if (found.get() >= 0) return@submit
+                try {
+                    val s = java.net.Socket()
+                    s.connect(java.net.InetSocketAddress("127.0.0.1", p), 120)
+                    s.soTimeout = 250
+                    s.getOutputStream().write(cnxn); s.getOutputStream().flush()
+                    val rb = ByteArray(4)
+                    val n = try { s.getInputStream().read(rb) } catch (_: Exception) { -1 }
+                    s.close()
+                    if (n == 4 && rb[0] == 'C'.code.toByte() && rb[1] == 'N'.code.toByte() && rb[2] == 'X'.code.toByte() && rb[3] == 'N'.code.toByte()) {
+                        found.compareAndSet(-1, p)
+                    }
+                } catch (_: Exception) {}
+            })
+        }
+        for (f in futures) try { f.get() } catch (_: Exception) {}
+        pool.shutdown()
+        val p = found.get()
+        if (p > 0) {
+            val out = shell.connect(p)
+            appendLog("connect($p)：" + out.trim().ifBlank { "(无输出)" })
+            if (out.contains("connected to", true)) return p
+        }
+        return null
     }
 
     private fun postJson(url: String, body: String): JSONObject {

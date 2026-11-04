@@ -196,13 +196,13 @@ class MainActivity : Activity() {
         boxFields.addView(fCard)
 
         val aCard = card()
-        aCard.addView(label("无线调试配对（首次需填，配对后可清空）"))
+        aCard.addView(label("无线调试配对（配对码必填；端口留空自动检测）"))
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         edPairPort = edit("配对端口", num = true, text = pref("pp")).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
         edPairCode = edit("配对码(6位)", text = pref("pc")).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = 12 } }
         row.addView(edPairPort); row.addView(edPairCode)
         aCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
-        aCard.addView(label("无线调试连接端口（无线调试页 IP:端口 里的端口）"))
+        aCard.addView(label("无线调试连接端口（留空自动检测；检测失败再手填）"))
         edConnectPort = edit("连接端口", num = true, text = pref("cp"))
         aCard.addView(edConnectPort, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
         val rowBtn = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }

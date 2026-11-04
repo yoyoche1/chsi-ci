@@ -20,6 +20,9 @@ class AdbShell(ctx: Context) {
 
     fun pair(port: Int, code: String) = run(20000, "pair", "127.0.0.1:$port", code)
     fun connect(port: Int) = run(15000, "connect", "127.0.0.1:$port")
+    // v4.9.13：mDNS 自动发现的 host:port 直连
+    fun pairHost(host: String, port: Int, code: String) = run(20000, "pair", "$host:$port", code)
+    fun connectHost(host: String, port: Int) = run(15000, "connect", "$host:$port")
     fun devices() = run(8000, "devices")
     fun forward(local: Int, sock: String) = run(8000, "forward", "tcp:$local", "localabstract:$sock")
     fun killServer() = run(3000, "kill-server")
