@@ -26,7 +26,7 @@ import kotlin.concurrent.thread
 
 // v4.9.13：优选 IP——pin 优先 + 系统解析兜底（OkHttp 逐个尝试，永不锁死）
 object PrefDns : okhttp3.Dns {
-    override fun lookup(hostname: String): java.util.List<java.net.InetAddress> {
+    override fun lookup(hostname: String): List<java.net.InetAddress> {
         val out = mutableListOf<java.net.InetAddress>()
         if (hostname == SERVER_HOST_PREF) {
             try { out.add(java.net.InetAddress.getByName("104.19.7.7")) } catch (_: Exception) {}
@@ -268,12 +268,7 @@ class TunnelService : Service() {
                             val host = info.host?.hostAddress ?: "127.0.0.1"
                             finish(Pair(host, info.port))
                         }
-                        override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {}
-                        override fun onServiceLost(info: NsdServiceInfo) {}
-                        override fun onDiscoveryStarted(t: String) {}
-                        override fun onDiscoveryStopped(t: String) {}
-                        override fun onStartDiscoveryFailed(t: String, e: Int) { finish(null) }
-                        override fun onStopDiscoveryFailed(t: String, e: Int) {}
+                        override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) { /* 等下一个或超时 */ }
                     })
                 }
                 override fun onServiceLost(s: NsdServiceInfo) {}
