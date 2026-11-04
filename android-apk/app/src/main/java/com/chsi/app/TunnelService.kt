@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
-import okhttp3.CertificatePinner
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -35,8 +34,6 @@ class TunnelService : Service() {
         const val SERVER_CHECK = "https://chsi.chsiauth.dpdns.org:443/check"
         const val SERVER_PREPARE = "https://chsi.chsiauth.dpdns.org:443/prepare"
         const val SERVER_WS = "wss://chsi.chsiauth.dpdns.org:443/tunnel"
-        // SPKI pin（与自签证书一致，sha256/xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=）
-        const val SPKI_PIN = "sha256/xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA="
 
         @Volatile var status = "● 未运行"
         @Volatile var logBuf = StringBuilder()
