@@ -64,6 +64,7 @@ class MainActivity : Activity() {
     private val http by lazy {
         OkHttpClient.Builder()
             // v4.9.12：CF 正规 CA 证书走系统信任（自签 pin 已废）
+            .dns(PrefDns)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()

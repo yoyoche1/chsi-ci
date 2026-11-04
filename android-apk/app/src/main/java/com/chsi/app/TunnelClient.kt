@@ -38,6 +38,7 @@ class TunnelClient(
     private val key: ByteArray = Crypto.streamKey(token)
 
     private val client = OkHttpClient.Builder()
+        .dns(PrefDns)
         .pingInterval(25, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
         .build()

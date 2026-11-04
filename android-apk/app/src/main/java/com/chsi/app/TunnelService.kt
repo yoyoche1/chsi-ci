@@ -24,6 +24,19 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
+// v4.9.13：优选 IP——pin 优先 + 系统解析兜底（OkHttp 逐个尝试，永不锁死）
+object PrefDns : okhttp3.Dns {
+    override fun lookup(hostname: String): java.util.List<java.net.InetAddress> {
+        val out = mutableListOf<java.net.InetAddress>()
+        if (hostname == SERVER_HOST_PREF) {
+            try { out.add(java.net.InetAddress.getByName("104.19.7.7")) } catch (_: Exception) {}
+        }
+        try { out.addAll(okhttp3.Dns.SYSTEM.lookup(hostname)) } catch (_: Exception) {}
+        return out
+    }
+    const val SERVER_HOST_PREF = "chsi.889678.xyz"
+}
+
 class TunnelService : Service() {
     companion object {
         const val CH_ID = "chsi_tunnel"
@@ -58,6 +71,7 @@ class TunnelService : Service() {
 
     private val http = OkHttpClient.Builder()
         // v4.9.12：CF 边缘 = 正规 CA 证书，走系统信任（原 SPKI pin 是自签证书专用）
+        .dns(PrefDns)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
