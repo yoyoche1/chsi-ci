@@ -12,9 +12,15 @@ class AdbShell(ctx: Context) {
     private val adb = File(ctx.applicationInfo.nativeLibraryDir, "libadb.so")
     private val home = ctx.cacheDir.absolutePath
 
+    // v1.9：显式设备序列号——防止 adb server 挂着多个 transport 时
+    // `adb shell` 报 "more than one device" 而静默失败
+    @Volatile var serial: String? = null
+
     fun run(timeoutMs: Long, vararg args: String): String {
         return try {
-            val p = ProcessBuilder(listOf(adb.absolutePath) + args)
+            val needsDev = args.contains("shell") || args.contains("forward")
+            val prefix = if (needsDev && serial != null) arrayOf("-s", serial!!) else emptyArray()
+            val p = ProcessBuilder(listOf(adb.absolutePath) + prefix + args)
                 .redirectErrorStream(true)
                 .apply {
                     environment()["HOME"] = home
