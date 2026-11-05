@@ -74,9 +74,11 @@ class TunnelService : Service() {
     private var adb: AdbShell? = null
 
     private val http = OkHttpClient.Builder()
-        // v4.9.12：CF 边缘 = 正规 CA 证书，走系统信任（原 SPKI pin 是自签证书专用）
+        // v1.3：雨云VPS 自签证书——系统信任必失败（Trust anchor not found），
+        // 改用「整证书 SHA-256 当信任根」（见 PinnedTrust）
         .dns(PrefDns)
-        .certificatePinner(SERVER_PIN)
+        .sslSocketFactory(PinnedTrust.sslContext.socketFactory, PinnedTrust.trustManager)
+        .hostnameVerifier(PinnedTrust.hostVerifier)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()

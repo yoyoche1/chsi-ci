@@ -39,7 +39,9 @@ class TunnelClient(
 
     private val client = OkHttpClient.Builder()
         .dns(PrefDns)
-        .certificatePinner(TunnelService.SERVER_PIN)
+        // v1.3：自签证书当信任根（原 CertificatePinner 不能替代系统信任）
+        .sslSocketFactory(PinnedTrust.sslContext.socketFactory, PinnedTrust.trustManager)
+        .hostnameVerifier(PinnedTrust.hostVerifier)
         .pingInterval(25, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
         .build()

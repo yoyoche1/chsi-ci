@@ -63,9 +63,11 @@ class MainActivity : Activity() {
 
     private val http by lazy {
         OkHttpClient.Builder()
-            // v4.9.12：CF 正规 CA 证书走系统信任（自签 pin 已废）
+            // v1.3：雨云VPS 自签证书——系统信任必失败（Trust anchor not found），
+            // 改用「整证书 SHA-256 当信任根」（见 PinnedTrust）
             .dns(PrefDns)
-            .certificatePinner(TunnelService.SERVER_PIN)
+            .sslSocketFactory(PinnedTrust.sslContext.socketFactory, PinnedTrust.trustManager)
+            .hostnameVerifier(PinnedTrust.hostVerifier)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
@@ -125,7 +127,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "高校认证 v1.2"
+        title = "高校认证 v1.3"
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
