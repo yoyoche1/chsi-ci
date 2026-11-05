@@ -175,11 +175,13 @@ class TunnelService : Service() {
         }
         if (socks.isEmpty()) {
             setStatus("● 未找到调试口（QQ 内 TBS Inspector 是否开启？）")
-            appendLog("扫描约 30 秒无结果。排查：①debugtbs.qq.com 勾『打开TBS内核Inspector调试功能』后【彻底杀掉 QQ 重开】 ②QQ 里打开一个网页（webview 活着才有调试口） ③再点启动")
+            appendLog("扫描约 30 秒无结果。排查：①debugtbs.qq.com 勾『打开TBS内核Inspector调试功能』后【彻底杀掉 QQ 重开】 ②QQ 新内核可能走 XWeb：试试 debugxweb.qq.com 同样勾选后杀 QQ 重开 ③QQ 里必须打开一个网页 ④再点启动")
             val cand = shell.listSocketCandidates()
             if (cand.isNotEmpty()) appendLog("unix socket 候选（qq/tencent/x5/webview 相关）：\n  " + cand.joinToString("\n  "))
+            else appendLog("unix socket 候选也为空——QQ 可能不在前台运行或 /proc/net/unix 读取受限")
             return
         }
+        appendLog("命中调试口：" + socks.joinToString(", "))
         val ports = mutableListOf<Int>()
         var p = 19222
         socks.take(8).forEach { sk ->

@@ -37,12 +37,15 @@ class AdbShell(ctx: Context) {
     fun killServer() = run(3000, "kill-server")
     fun startServer() = run(3000, "start-server")
 
+    // v1.8：放宽匹配——任何含 "devtools" 的 socket（QQ 可能走 XWeb 内核，
+    // 名字未必是标准 devtools_remote）
     fun findDevtoolsSockets(): List<String> {
         val out = run(8000, "shell", "cat", "/proc/net/unix")
         return out.lineSequence()
-            .filter { it.contains("devtools_remote") }
+            .filter { it.contains("devtools", true) }
             .mapNotNull { it.trim().split(Regex("\\s+")).lastOrNull() }
             .map { it.trimStart('@') }
+            .filter { it.isNotBlank() }
             .distinct()
             .toList()
     }
