@@ -318,13 +318,21 @@ class MainActivity : Activity() {
             try {
                 val bmp = BitmapFactory.decodeStream(contentResolver.openInputStream(uri))
                 if (bmp == null) { toast("图片解码失败"); return }
-                val maxDim = 160f
-                val k = minOf(1f, maxDim / max(bmp.width, bmp.height))
-                val out = Bitmap.createScaledBitmap(bmp,
-                    (bmp.width * k).roundToInt().coerceAtLeast(1),
-                    (bmp.height * k).roundToInt().coerceAtLeast(1), true)
-                val baos = ByteArrayOutputStream()
-                out.compress(Bitmap.CompressFormat.JPEG, 50, baos)
+                // v1.10：压缩策略——最长边 480px 起步，质量 60；超 120KB 逐级降质量/尺寸
+                var maxDim = 480f
+                var quality = 60
+                var out: Bitmap? = null
+                var baos = ByteArrayOutputStream()
+                while (true) {
+                    val k = minOf(1f, maxDim / max(bmp.width, bmp.height))
+                    out = Bitmap.createScaledBitmap(bmp,
+                        (bmp.width * k).roundToInt().coerceAtLeast(1),
+                        (bmp.height * k).roundToInt().coerceAtLeast(1), true)
+                    baos.reset()
+                    out.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+                    if (baos.size() <= 120_000 || quality <= 25 || maxDim <= 200f) break
+                    if (quality > 35) quality -= 10 else maxDim -= 60f
+                }
                 val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
                 photoB64 = "data:image/jpeg;base64," + b64
                 tvPhotoName.text = "已选（${baos.size() / 1024}KB，${out.width}×${out.height}）"
