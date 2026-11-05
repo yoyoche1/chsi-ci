@@ -321,7 +321,7 @@ class MainActivity : Activity() {
                 // v1.10：压缩策略——最长边 480px 起步，质量 60；超 120KB 逐级降质量/尺寸
                 var maxDim = 480f
                 var quality = 60
-                var out: Bitmap? = null
+                var out: Bitmap = bmp
                 var baos = ByteArrayOutputStream()
                 while (true) {
                     val k = minOf(1f, maxDim / max(bmp.width, bmp.height))
