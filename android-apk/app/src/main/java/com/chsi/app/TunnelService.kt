@@ -164,9 +164,21 @@ class TunnelService : Service() {
         }
 
         setStatus("● 扫描调试口…")
-        val socks = shell.findDevtoolsSockets()
+        var socks = shell.findDevtoolsSockets()
+        if (socks.isEmpty()) {
+            appendLog("首次扫描无调试口——Inspector 只对重启后的新 webview 生效；请在 QQ 里打开目标网页，等待中…")
+            var tries = 0
+            while (socks.isEmpty() && tries < 10) {
+                Thread.sleep(3000)
+                socks = shell.findDevtoolsSockets()
+                tries++
+            }
+        }
         if (socks.isEmpty()) {
             setStatus("● 未找到调试口（QQ 内 TBS Inspector 是否开启？）")
+            appendLog("扫描约 30 秒无结果。排查：①debugtbs.qq.com 勾『打开TBS内核Inspector调试功能』后【彻底杀掉 QQ 重开】 ②QQ 里打开一个网页（webview 活着才有调试口） ③再点启动")
+            val cand = shell.listSocketCandidates()
+            if (cand.isNotEmpty()) appendLog("unix socket 候选（qq/tencent/x5/webview 相关）：\n  " + cand.joinToString("\n  "))
             return
         }
         val ports = mutableListOf<Int>()

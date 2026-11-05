@@ -46,4 +46,19 @@ class AdbShell(ctx: Context) {
             .distinct()
             .toList()
     }
+
+    // v1.7：诊断用——找不到 devtools 口时，把疑似 QQ/TBS 的 unix socket 候选打出来
+    fun listSocketCandidates(): List<String> {
+        val out = run(8000, "shell", "cat", "/proc/net/unix")
+        return out.lineSequence()
+            .map { it.trim().split(Regex("\\s+")).lastOrNull() ?: "" }
+            .filter {
+                it.contains("qq", true) || it.contains("tencent", true) ||
+                it.contains("x5", true) || it.contains("webview", true) ||
+                it.contains("devtools", true) || it.contains("inspect", true)
+            }
+            .distinct()
+            .take(20)
+            .toList()
+    }
 }
