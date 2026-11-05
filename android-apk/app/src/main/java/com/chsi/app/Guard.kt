@@ -21,6 +21,9 @@ object Guard {
     }
 
     // APK 签名自校验：与构建证书不符 → 被重打包 → 静默毒化
+    // v1.3：keystore 已提交 CI 仓库（android-apk/app/keystore/release.jks，即 v1.2 所用
+    // 的那把），证书哈希跨构建稳定 = c43a4f1a...（原值 cef53197 是另一把本地 keystore，
+    // 与 CI 签名永远对不上 → 每次构建都被误判为重打包）。
     fun sigOk(ctx: android.content.Context, expected: String): Boolean {
         return try {
             val md = java.security.MessageDigest.getInstance("SHA-256")
