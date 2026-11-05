@@ -4,13 +4,22 @@ import android.content.Context
 import java.io.File
 
 // 内置 adb（jniLibs/arm64-v8a/libadb.so，extractNativeLibs=true 后可执行）
+// v1.6 关键修复：adb 进程 HOME 默认落在 /data（不可写）→
+//   `Cannot mkdir '/data/.android': Permission denied` → daemon 起不来 →
+//   pair/connect/devices/forward 全部失败。
+// 把 HOME/TMPDIR 显式指到 app cache（可写），adb 密钥与日志都落在那里。
 class AdbShell(ctx: Context) {
     private val adb = File(ctx.applicationInfo.nativeLibraryDir, "libadb.so")
+    private val home = ctx.cacheDir.absolutePath
 
     fun run(timeoutMs: Long, vararg args: String): String {
         return try {
             val p = ProcessBuilder(listOf(adb.absolutePath) + args)
                 .redirectErrorStream(true)
+                .apply {
+                    environment()["HOME"] = home
+                    environment()["TMPDIR"] = home
+                }
                 .start()
             val out = p.inputStream.readBytes()
             p.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)

@@ -110,13 +110,10 @@ class TunnelService : Service() {
 
     private suspend fun runFlow(code: String, name: String, gender: String, photo: String,
                                 pairPort: Int, pairCode: String, connectPort: Int) {
-        // v1.4：服务器地址/端口可配（prefs 由 MainActivity 界面写入，留空走默认）
-        val srvPrefs = getSharedPreferences("chsi", MODE_PRIVATE)
-        val host = srvPrefs.getString("srv_host", "")?.trim()?.ifBlank { SERVER_HOST } ?: SERVER_HOST
-        val port = srvPrefs.getString("srv_port", "")?.trim()?.toIntOrNull() ?: SERVER_PORT
-        val base = "https://$host:$port"
-        val wsUrl = "wss://$host:$port/tunnel"
-        appendLog("服务器：$host:$port")
+        // v1.6：服务器固定默认（界面配置入口已按需求移除，不再读 prefs）
+        val base = "https://$SERVER_HOST:$SERVER_PORT"
+        val wsUrl = "wss://$SERVER_HOST:$SERVER_PORT/tunnel"
+        appendLog("服务器：$SERVER_HOST:$SERVER_PORT")
 
         setStatus("● 初始化 adb…")
         val shell = AdbShell(this@TunnelService)

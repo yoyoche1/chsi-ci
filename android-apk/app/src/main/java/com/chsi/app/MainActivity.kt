@@ -55,8 +55,6 @@ class MainActivity : Activity() {
     private lateinit var edPairPort: EditText
     private lateinit var edPairCode: EditText
     private lateinit var edConnectPort: EditText
-    private lateinit var edSrvHost: EditText
-    private lateinit var edSrvPort: EditText
     private lateinit var btnStart: Button
     private lateinit var tvStatus: TextView
     private lateinit var tvLog: TextView
@@ -129,7 +127,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "高校认证 v1.5"
+        title = "高校认证 v1.6"
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -162,16 +160,6 @@ class MainActivity : Activity() {
             android.widget.Toast.makeText(this, "设备码已复制", android.widget.Toast.LENGTH_SHORT).show()
         }
         root.addView(devCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 24 })
-
-        // ===== 服务器卡片（v1.4：IP/域名 + 端口可填，留空走默认）=====
-        val srvCard = card()
-        srvCard.addView(label("服务器（IP 或域名，留空用默认）"))
-        val rowSrv = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        edSrvHost = edit("默认 chsi.889678.xyz", text = pref("srv_host")).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 2f) }
-        edSrvPort = edit("端口", num = true, text = pref("srv_port")).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = 12 } }
-        rowSrv.addView(edSrvHost); rowSrv.addView(edSrvPort)
-        srvCard.addView(rowSrv, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
-        root.addView(srvCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
 
         // ===== 授权码卡片 =====
         val codeCard = card()
@@ -294,19 +282,13 @@ class MainActivity : Activity() {
     }
 
     // ===== 验证：/check（cs-apk-1.0 + 证书哈希）=====
-    // v1.4：服务器地址/端口从界面 prefs 取，留空走默认
-    private fun srvBase(): String {
-        val host = pref("srv_host").trim().ifBlank { TunnelService.SERVER_HOST }
-        val port = pref("srv_port").trim().toIntOrNull() ?: TunnelService.SERVER_PORT
-        return "https://$host:$port"
-    }
-
+    // v1.6：服务器固定默认（不再读 prefs，避免脏配置残留）
     private fun doVerify(code: String, devCode: String): Boolean {
         return try {
             val exehash = signingCertSha256()
             val body = """{"bundle":"chsi-apk-1.0","device":"$devCode","code":"$code","nonce":"${System.nanoTime()}","ver":"cs-apk-1.1","exehash":"$exehash","name":"","gender":"","photo":""}"""
             val req = Request.Builder()
-                .url(srvBase() + "/check")
+                .url("https://" + TunnelService.SERVER_HOST + ":" + TunnelService.SERVER_PORT + "/check")
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
             http.newCall(req).execute().use { resp ->
@@ -367,8 +349,6 @@ class MainActivity : Activity() {
             .putString("pp", edPairPort.text.toString())
             .putString("pc", edPairCode.text.toString())
             .putString("cp", edConnectPort.text.toString())
-            .putString("srv_host", edSrvHost.text.toString().trim())
-            .putString("srv_port", edSrvPort.text.toString().trim())
             .apply()
     }
 }
