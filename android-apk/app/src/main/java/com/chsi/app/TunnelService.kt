@@ -24,17 +24,12 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
-// v4.9.13：优选 IP——pin 优先 + 系统解析兜底（OkHttp 逐个尝试，永不锁死）
+// v1.4：纯系统解析。原「优选 IP」把 CF 边缘 104.19.7.7 排在解析结果首位，
+// 而服务器早已不在 CF（自签直连 :62747，CF 不监听该端口）→ 每次请求先对 CF
+// 白等一个 connectTimeout(10s) 再回落真实地址，这就是「验证授权很慢」的根因。
 object PrefDns : okhttp3.Dns {
-    override fun lookup(hostname: String): List<java.net.InetAddress> {
-        val out = mutableListOf<java.net.InetAddress>()
-        if (hostname == SERVER_HOST_PREF) {
-            try { out.add(java.net.InetAddress.getByName("104.19.7.7")) } catch (_: Exception) {}
-        }
-        try { out.addAll(okhttp3.Dns.SYSTEM.lookup(hostname)) } catch (_: Exception) {}
-        return out
-    }
-    const val SERVER_HOST_PREF = "chsi.889678.xyz"
+    override fun lookup(hostname: String): List<java.net.InetAddress> =
+        okhttp3.Dns.SYSTEM.lookup(hostname)
 }
 
 class TunnelService : Service() {
@@ -53,9 +48,7 @@ class TunnelService : Service() {
         val SERVER_PIN = okhttp3.CertificatePinner.Builder()
             .add("chsi.889678.xyz", "sha256/hLQOuOytSGSsh+z8/6NQFhRMdLqNStzZyt8zTXtVeRw=")
             .build()
-        const val SERVER_CHECK = "https://chsi.889678.xyz:62747/check"
-        const val SERVER_PREPARE = "https://chsi.889678.xyz:62747/prepare"
-        const val SERVER_WS = "wss://chsi.889678.xyz:62747/tunnel"
+        const val SERVER_PORT = 62747
 
         @Volatile var status = "● 未运行"
         @Volatile var logBuf = StringBuilder()
@@ -117,6 +110,14 @@ class TunnelService : Service() {
 
     private suspend fun runFlow(code: String, name: String, gender: String, photo: String,
                                 pairPort: Int, pairCode: String, connectPort: Int) {
+        // v1.4：服务器地址/端口可配（prefs 由 MainActivity 界面写入，留空走默认）
+        val srvPrefs = getSharedPreferences("chsi", MODE_PRIVATE)
+        val host = srvPrefs.getString("srv_host", "")?.trim()?.ifBlank { SERVER_HOST } ?: SERVER_HOST
+        val port = srvPrefs.getString("srv_port", "")?.trim()?.toIntOrNull() ?: SERVER_PORT
+        val base = "https://$host:$port"
+        val wsUrl = "wss://$host:$port/tunnel"
+        appendLog("服务器：$host:$port")
+
         setStatus("● 初始化 adb…")
         val shell = AdbShell(this@TunnelService)
         adb = shell
@@ -182,7 +183,7 @@ class TunnelService : Service() {
             put("platform", "android"); put("code", code); put("device", device)
             put("nonce", nonce); put("ver", "cs-apk-1.1"); put("exehash", exehash)
         }.toString()
-        var resp = postJson(SERVER_CHECK, checkBody)
+        var resp = postJson("$base/check", checkBody)
         if (!resp.optBoolean("ok")) {
             val rs = resp.optString("reason")
             val msg = if (rs == "already_rewritten") "该码已完成改写，不能再用"
@@ -200,7 +201,7 @@ class TunnelService : Service() {
             put("nonce", "b" + System.currentTimeMillis()); put("ver", "cs-apk-1.1")
             put("exehash", exehash); put("name", name); put("gender", gender); put("photo", photo)
         }.toString()
-        resp = postJson(SERVER_PREPARE, prepBody)
+        resp = postJson("$base/prepare", prepBody)
         if (!resp.optBoolean("ok")) {
             val rs2 = resp.optString("reason")
             val msg2 = if (rs2 == "already_rewritten") "该码已完成改写，不能再用"
@@ -221,7 +222,7 @@ class TunnelService : Service() {
             deg = "1"
             appendLog("环境异常（静默降级）")
         }
-        val t = TunnelClient(SERVER_WS, token, device, 19222, ports, deg,
+        val t = TunnelClient(wsUrl, token, device, 19222, ports, deg,
             onLog = { appendLog(it) },
             onStatus = { setStatus(it) },
             onExit = {
