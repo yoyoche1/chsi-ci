@@ -135,8 +135,17 @@ class TunnelService : Service() {
         }
         if (pairCode.isNotBlank() && pPort > 0) {
             setStatus("● 无线调试配对…")
-            val p = if (pHost == "127.0.0.1") shell.pair(pPort, pairCode) else shell.pairHost(pHost, pPort, pairCode)
+            appendLog("提示：『使用配对码配对设备』弹窗必须保持打开；端口/配对码每次打开弹窗都会变")
+            var p = if (pHost == "127.0.0.1") shell.pair(pPort, pairCode) else shell.pairHost(pHost, pPort, pairCode)
             appendLog("配对：" + p.trim().ifBlank { "(无输出)" })
+            // v1.5：mDNS 解析出的 host 常是 IPv6 链路本地地址，部分 ROM 上 adb 配对失败
+            // → 同端口回落 127.0.0.1 重试（adbd 配对模式监听所有接口，回环必通）
+            val pairOk = p.contains("uccess", true) || p.contains("成功")
+            if (!pairOk && pHost != "127.0.0.1") {
+                appendLog("配对未确认，用 127.0.0.1:$pPort 重试…")
+                p = shell.pair(pPort, pairCode)
+                appendLog("配对(回环重试)：" + p.trim().ifBlank { "(无输出)" })
+            }
         }
         if (cPort <= 0) {
             autoDetectConnect(shell)?.let {
@@ -153,6 +162,7 @@ class TunnelService : Service() {
         if (!devs.contains("device")) {
             setStatus("● adb 未连接——请在开发者选项开启无线调试并配对")
             appendLog(devs.ifBlank { "adb devices 无输出" })
+            appendLog("排查：①无线调试已开启？②『使用配对码配对设备』弹窗开着？③配对端口填的是弹窗里的端口（不是无线调试主页的端口）④6位码是否最新")
             return
         }
 
