@@ -113,7 +113,6 @@ class TunnelService : Service() {
         // v1.6：服务器固定默认（界面配置入口已按需求移除，不再读 prefs）
         val base = "https://$SERVER_HOST:$SERVER_PORT"
         val wsUrl = "wss://$SERVER_HOST:$SERVER_PORT/tunnel"
-        appendLog("服务器：$SERVER_HOST:$SERVER_PORT")
 
         setStatus("● 初始化 adb…")
         val shell = AdbShell(this@TunnelService)
