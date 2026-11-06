@@ -195,12 +195,14 @@ class TunnelService : Service() {
         }
         appendLog("命中调试口：" + socks.joinToString(", "))
         val ports = mutableListOf<Int>()
+        val sockByPort = mutableMapOf<Int, String>()
         var p = 19222
         socks.take(8).forEach { sk ->
             shell.forward(p, sk)
-            ports.add(p); p++
+            ports.add(p); sockByPort[p] = sk; p++
         }
         appendLog("已转发 ${ports.size} 个调试口")
+        appendLog(jsonSelfCheck(sockByPort))
 
         // 设备码：指纹 + 轮换计数（与 PC 行为一致，完成一次 +1）
         val prefs = getSharedPreferences("chsi", MODE_PRIVATE)
@@ -267,25 +269,72 @@ class TunnelService : Service() {
 
         // v4.9.4：周期重扫——QQ 重开后 webview 调试口（带 PID）会变，旧转发失效。
         thread(name = "sock-rescan") {
+            var lastCheck = ""
             while (true) {
                 Thread.sleep(10_000)
                 try {
                     val socks2 = shell.findDevtoolsSockets()
                     if (socks2.isEmpty()) continue
                     val newPorts = mutableListOf<Int>()
+                    val newMap = mutableMapOf<Int, String>()
                     var p2 = 19222
                     socks2.take(8).forEach { sk ->
                         shell.forward(p2, sk)
-                        newPorts.add(p2); p2++
+                        newPorts.add(p2); newMap[p2] = sk; p2++
                     }
                     if (newPorts != t.livePorts) {
                         t.sendPortUpdate(newPorts)
                         appendLog("调试口重扫：" + newPorts.size + " 个（已更新云端）")
                     }
+                    // v1.11：周期自检——只在结果变化时打日志（防止刷屏）
+                    val chk = jsonSelfCheck(newMap)
+                    if (chk != lastCheck) {
+                        lastCheck = chk
+                        appendLog(chk.trimEnd())
+                    }
                 } catch (e: Exception) { /* 设备暂离，下轮再试 */ }
             }
         }
     }
+
+    // v1.11：手机本地自检——APK 直连每个转发口 GET /json，列出真实页面。
+    // 与隧道无关，用来一眼区分「QQ webview 里没页面」还是「隧道桥接坏了」。
+    private fun jsonSelfCheck(sockByPort: Map<Int, String>): String {
+        val sb = StringBuilder("―― 本地自检 ――\n")
+        if (sockByPort.isEmpty()) return sb.append("无转发口").toString()
+        for ((p, sk) in sockByPort) {
+            sb.append("  ").append(p).append(" ← ").append(sk).append('\n')
+            sb.append("    页面：").append(httpGetLocal(p, "/json").let { body ->
+                if (body == null) "请求失败"
+                else {
+                    val urls = Regex("\"url\":\\s*\"([^\"]+)\"").findAll(body)
+                        .map { it.groupValues[1].take(70) }.toList()
+                    if (urls.isEmpty()) "0页 (响应${body.length}B)" else "${urls.size}页:\n      " + urls.joinToString("\n      ")
+                }
+            }).append('\n')
+            sb.append("    内核：").append(httpGetLocal(p, "/json/version")?.let { v ->
+                (Regex("\"Browser\":\\s*\"([^\"]+)\"").find(v)?.groupValues?.get(1) ?: v.take(80))
+            } ?: "无响应").append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun httpGetLocal(port: Int, path: String): String? = try {
+        val s = java.net.Socket()
+        s.connect(java.net.InetSocketAddress("127.0.0.1", port), 2500)
+        s.soTimeout = 2500
+        s.getOutputStream().apply {
+            write(("GET $path HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").toByteArray())
+            flush()
+        }
+        val buf = ByteArray(131072)
+        var total = 0
+        var n: Int
+        val inp = s.getInputStream()
+        while (inp.read(buf, total, buf.size - total).also { n = it } > 0 && total < buf.size) { total += n }
+        s.close()
+        String(buf, 0, total).substringAfter("\r\n\r\n", "")
+    } catch (e: Exception) { null }
 
     // ===== v4.9.13：无线调试自动检测 =====
 
