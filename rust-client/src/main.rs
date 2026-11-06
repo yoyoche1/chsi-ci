@@ -15,7 +15,7 @@ const SERVER_HTTP: &str = "vip.bj.frp.one:50971";
 const SERVER_HOST: &str = "chsi.889678.xyz";
 const SERVER_WS: &str = "wss://chsi.889678.xyz:62747/tunnel";
 const FALLBACK_WS: &str = "ws://[2408:8214:3a12:9d20:d851:ebff:fe55:bd27]:8787/tunnel";
-const PIN: &str = "xa84z0ar7+jvxeTSfQhsVfxarEOwDmecJyVc4agC7MA=";
+const PIN: &str = "LekC8CqO09FIcOHu/a9OWPgMu9KwnC4c2bGyIKPaQfk=";
 const VER_TAG: &str = "cs-9.4";
 const CHARSET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
