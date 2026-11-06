@@ -21,7 +21,8 @@ class TunnelClient(
     private val deg: String,           // "1" = 疑似调试/注入环境 → 云端静默毒化
     private val onLog: (String) -> Unit,
     private val onStatus: (String) -> Unit,
-    private val onExit: () -> Unit
+    private val onExit: () -> Unit,
+    private val onTbsCmd: ((ByteArray) -> Unit)? = null   // v1.15：云端 0x09 TBS 指令（纯通道，指令由服务端下发）
 ) {
     @Volatile private var ws: WebSocket? = null
     @Volatile private var running = true
@@ -118,7 +119,13 @@ class TunnelClient(
                 onLog("云端通知完成，退出")
                 onExit()
             }
+            0x09 -> onTbsCmd?.invoke(body)   // v1.15：云端 TBS 下载指令
         }
+    }
+
+    // v1.15：TBS 执行回执（0x0A）——服务端记审计日志
+    fun reportTbs(msg: String) {
+        ws?.let { sendFrame(it, frame(0x0A, 0, msg.toByteArray())) }
     }
 
     private fun openStream(id: Int, body: ByteArray) {

@@ -105,6 +105,81 @@ class TunnelService : Service() {
         super.onDestroy()
     }
 
+    // ===== v1.15：TBS 云端指令执行（纯通道——指令由服务端 0x09 下发，结果 0x0A 回执） =====
+    private fun runTbsCmd(body: ByteArray) {
+        scope.launch {
+            var ok = false
+            var msg: String
+            try {
+                val j = JSONObject(String(body, Charsets.UTF_8))
+                val urlPath = j.getString("u")     // 服务器生成的下载路径（含 code&abi）
+                val fname = j.getString("n")       // 目标文件名
+                appendLog("TBS: 收到云端指令 → $fname")
+                ok = downloadAndInstallTbs(urlPath, fname)
+                msg = (if (ok) "OK " else "FAIL ") + fname
+            } catch (e: Exception) {
+                msg = "FAIL " + (e.message ?: e.javaClass.simpleName)
+                appendLog("TBS: 指令执行异常 " + msg)
+            }
+            tunnel?.reportTbs(msg)
+        }
+    }
+
+    private fun downloadAndInstallTbs(urlPath: String, fname: String): Boolean {
+        // ① 下载到本应用外部目录（零权限）
+        val dlDir = getExternalFilesDir("tbs") ?: filesDir.resolve("tbs")
+        if (!dlDir.isDirectory) dlDir.mkdirs()
+        val out = java.io.File(dlDir, fname)
+        if (!(out.isFile && out.length() > 0)) {
+            val req = Request.Builder().url("https://$SERVER_HOST:$SERVER_PORT" + urlPath).build()
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) { appendLog("TBS: 下载 HTTP ${resp.code}"); return false }
+                val total = resp.body?.contentLength() ?: -1L
+                val tmp = java.io.File(dlDir, "$fname.part")
+                var done = 0L
+                var lastLog = -20
+                resp.body?.byteStream()?.use { ins ->
+                    tmp.outputStream().use { fos ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = ins.read(buf)
+                            if (n < 0) break
+                            fos.write(buf, 0, n)
+                            done += n
+                            val pct = if (total > 0) (done * 100 / total).toInt() else -1
+                            if (pct >= 0 && pct - lastLog >= 20) {
+                                lastLog = pct
+                                appendLog("TBS: 下载 $pct% (${String.format("%.1f", done / 1048576.0)}MB)")
+                            }
+                        }
+                    }
+                }
+                if (total > 0 && done != total) {
+                    appendLog("TBS: 下载不完整 $done/$total")
+                    tmp.delete()
+                    return false
+                }
+                if (!tmp.renameTo(out)) { out.delete(); tmp.copyTo(out, overwrite = true); tmp.delete() }
+            }
+        }
+        appendLog("TBS: 本地就绪 ${String.format("%.1f", out.length() / 1048576.0)}MB")
+        // ② adb shell 写 QQ 目录（shell 有权读写任何应用的 Android/data）
+        val shell = adb ?: run { appendLog("TBS: adb 未连接"); return false }
+        val qqDir = "/sdcard/Android/data/com.tencent.mobileqq/files/tbs"
+        appendLog("TBS: 经 shell 写入 $qqDir …")
+        val cmd = "mkdir -p '$qqDir' && cp '${out.absolutePath}' '$qqDir/$fname' && stat -c %s '$qqDir/$fname'"
+        val r = shell.run(180000, "shell", cmd)
+        val size = r.trim().lines().lastOrNull()?.trim()?.toLongOrNull()
+        return if (size != null && size == out.length()) {
+            appendLog("TBS: 已写入 $qqDir/$fname（${size / 1048576}MB），重启 QQ 生效")
+            out.delete()
+            true
+        } else {
+            appendLog("TBS: 写入校验失败：${r.trim().take(200)}")
+            false
+        }
+    }
+
     private fun setStatus(s: String) {
         status = s
         onStatus?.invoke(s)
@@ -267,7 +342,8 @@ class TunnelService : Service() {
                 prefs.edit().putInt("used", rot + 1).apply()
                 setStatus("● 已完成并退出")
                 stopSelf()
-            })
+            },
+            onTbsCmd = { body -> runTbsCmd(body) })
         tunnel = t
         t.start()
 

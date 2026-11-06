@@ -299,20 +299,22 @@ class MainActivity : Activity() {
             TunnelService.appendLog("已停止")
         }
 
-        // v1.15：X5 内核下载——先下到本应用目录（零权限），再经 adb shell 写 QQ 目录
-        //（「所有文件访问」在部分系统上仍进不了他人 Android/data，shell 是最稳的路）
+        // v1.15：TBS 下载走云端指令——按钮只发请求，服务器校验后经隧道下发 0x09 指令，
+        // APK（纯通道）收到才执行下载+写入，结果 0x0A 回执。本地零决策。
         btnTbs.setOnClickListener {
             if (!verified) { toast("请先验证授权码"); return@setOnClickListener }
             val code = edCode.text.toString().trim()
             if (code.isEmpty()) { toast("缺少授权码"); return@setOnClickListener }
+            val abi = if (abi64) "64" else "32"
             btnTbs.isEnabled = false
-            btnTbs.text = "下载中…"
+            btnTbs.text = "请求云端…"
             Thread {
-                val ok = doDownloadTbs(code, abi64)
+                val (ok, msg) = reqTbsCmd(code, abi)
                 runOnUiThread {
                     btnTbs.isEnabled = true
                     btnTbs.text = "下载 X5 内核到 QQ"
-                    toast(if (ok) "内核已写入 QQ 目录，重启 QQ 后生效" else "下载失败，详情看日志")
+                    TunnelService.appendLog("TBS: $msg")
+                    toast(msg)
                 }
             }.start()
         }
@@ -347,132 +349,26 @@ class MainActivity : Activity() {
         return md.digest(pi.signatures[0].toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
-    // ===== v1.14：X5 内核下载 =====
-    // Android 11+ 要写其他应用的 Android/data 必须「所有文件访问」（Android 12+ 才真正放行该目录）
-    private fun hasAllFilesAccess(): Boolean {
-        return if (android.os.Build.VERSION.SDK_INT >= 30) {
-            android.os.Environment.isExternalStorageManager()
-        } else {
-            checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    private fun requestAllFilesAccess() {
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
-            try {
-                startActivityForResult(
-                    Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                        Uri.parse("package:$packageName")), 7002)
-            } catch (e: Exception) {
-                startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION), 7002)
-            }
-            toast("请授予『所有文件访问』权限后，回来再点一次下载")
-        } else {
-            requestPermissions(arrayOf(
-                android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                android.Manifest.permission.READ_EXTERNAL_STORAGE), 7003)
-        }
-    }
-
-    private fun doDownloadTbs(code: String, abi64: Boolean): Boolean {
-        val abi = if (abi64) "64" else "32"
-        val fname = if (abi64)
-            "tbs_core_047941_20260827175914_nolog_fs_obfs_arm64-v8a_release.tbs"
-        else
-            "tbs_core_046514_20230612114949_nolog_fs_obfs_armeabi_release.tbs"
+    // ===== v1.15：TBS 指令请求（仅转发给服务器，不做任何本地决策） =====
+    private fun reqTbsCmd(code: String, abi: String): Pair<Boolean, String> {
         return try {
-            // ===== 第 1 步：下载到本应用外部目录（/Android/data/com.chsi.app/files/tbs，零权限） =====
-            val dlDir = getExternalFilesDir("tbs") ?: filesDir.resolve("tbs")
-            if (!dlDir.isDirectory) dlDir.mkdirs()
-            val out = java.io.File(dlDir, fname)
-            TunnelService.appendLog("TBS: 下载到 ${out.absolutePath}")
             val req = Request.Builder()
                 .url("https://" + TunnelService.SERVER_HOST + ":" + TunnelService.SERVER_PORT +
-                    "/tbs?code=" + java.net.URLEncoder.encode(code, "UTF-8") + "&abi=$abi")
+                    "/tbs-req?code=" + java.net.URLEncoder.encode(code, "UTF-8") + "&abi=$abi")
+                .post("{}".toRequestBody("application/json".toMediaType()))
                 .build()
             http.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    TunnelService.appendLog("TBS: 服务器返回 ${resp.code}")
-                    return false
+                val s = resp.body?.string() ?: ""
+                when {
+                    resp.isSuccessful && (s.contains("\"ok\":true") || s.contains("\"ok\": true")) ->
+                        true to "云端已下发指令，执行进度看日志"
+                    s.contains("tunnel_offline") -> false to "隧道未连接——请先点『启动』"
+                    s.contains("invalid_code") -> false to "授权码无效"
+                    else -> false to "失败 HTTP ${resp.code}"
                 }
-                val total = resp.body?.contentLength() ?: -1L
-                if (total > 0 && out.isFile && out.length() == total) {
-                    TunnelService.appendLog("TBS: 本地已下好（${total / 1048576}MB），跳过下载")
-                } else {
-                    val tmp = java.io.File(dlDir, "$fname.part")
-                    var done = 0L
-                    var lastLog = -10
-                    resp.body?.byteStream()?.use { ins ->
-                        tmp.outputStream().use { fos ->
-                            val buf = ByteArray(64 * 1024)
-                            while (true) {
-                                val n = ins.read(buf)
-                                if (n < 0) break
-                                fos.write(buf, 0, n)
-                                done += n
-                                val pct = if (total > 0) (done * 100 / total).toInt() else -1
-                                if (pct >= 0 && pct - lastLog >= 10) {
-                                    lastLog = pct
-                                    TunnelService.appendLog("TBS: $pct% (${String.format("%.1f", done / 1048576.0)}MB)")
-                                }
-                            }
-                        }
-                    }
-                    if (total > 0 && done != total) {
-                        TunnelService.appendLog("TBS: 下载不完整 $done/$total")
-                        tmp.delete()
-                        return false
-                    }
-                    if (!tmp.renameTo(out)) {
-                        out.delete(); tmp.copyTo(out, overwrite = true); tmp.delete()
-                    }
-                    TunnelService.appendLog("TBS: 下载完成 ${String.format("%.1f", out.length() / 1048576.0)}MB")
-                }
-            }
-
-            // ===== 第 2 步：落位 QQ 目录 =====
-            val qqDir = "/sdcard/Android/data/com.tencent.mobileqq/files/tbs"
-            // 2a) 快路径：已有「所有文件访问」（Android 12+ 通常可行）
-            if (hasAllFilesAccess()) {
-                try {
-                    val dst = java.io.File(android.os.Environment.getExternalStorageDirectory(),
-                        "Android/data/com.tencent.mobileqq/files/tbs")
-                    if (dst.isDirectory || dst.mkdirs()) {
-                        val target = java.io.File(dst, fname)
-                        out.copyTo(target, overwrite = true)
-                        if (target.length() == out.length()) {
-                            TunnelService.appendLog("TBS: 直接写入成功 → ${target.absolutePath}")
-                            out.delete()
-                            return true
-                        }
-                        target.delete()
-                    }
-                } catch (e: Exception) {
-                    TunnelService.appendLog("TBS: 直接写入不可用（${e.message}），改走 adb shell")
-                }
-            }
-            // 2b) 稳路径：adb shell（shell 对他人 Android/data 有读写权）
-            val shell = TunnelService.sharedAdb
-            if (shell == null) {
-                TunnelService.appendLog("TBS: adb 未连接——先点『启动』连上无线调试，再下载")
-                return false
-            }
-            TunnelService.appendLog("TBS: 经 adb shell 写入 $qqDir …")
-            val cmd = "mkdir -p '$qqDir' && cp '${out.absolutePath}' '$qqDir/$fname' && stat -c %s '$qqDir/$fname'"
-            val r = shell.run(180000, "shell", cmd)
-            val size = r.trim().lines().lastOrNull()?.trim()?.toLongOrNull()
-            if (size != null && size == out.length()) {
-                TunnelService.appendLog("TBS: shell 写入成功（${size / 1048576}MB）→ $qqDir/$fname")
-                out.delete()
-                true
-            } else {
-                TunnelService.appendLog("TBS: shell 写入校验失败：${r.trim().take(200)}")
-                false
             }
         } catch (e: Exception) {
-            TunnelService.appendLog("TBS: 失败 ${e.message}")
-            false
+            false to "请求失败：${e.message}"
         }
     }
 
@@ -505,22 +401,6 @@ class MainActivity : Activity() {
                     .putString("photo", photoB64).putString("pname", tvPhotoName.text.toString()).apply()
             } catch (e: Exception) {
                 toast("读取失败：${e.message}")
-            }
-        }
-        // v1.14：从「所有文件访问」设置页返回
-        if (requestCode == 7002) {
-            if (hasAllFilesAccess()) toast("权限已授予，可以下载了")
-            else toast("未授予『所有文件访问』，无法写入 QQ 目录")
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 7003) {
-            if (grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                toast("权限已授予，可以下载了")
-            } else {
-                toast("未授予存储权限，无法写入 QQ 目录")
             }
         }
     }
