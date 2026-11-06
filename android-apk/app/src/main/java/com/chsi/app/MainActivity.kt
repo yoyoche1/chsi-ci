@@ -56,10 +56,12 @@ class MainActivity : Activity() {
     private lateinit var edPairCode: EditText
     private lateinit var edConnectPort: EditText
     private lateinit var btnStart: Button
+    private lateinit var btnTbs: Button
     private lateinit var tvStatus: TextView
     private lateinit var tvLog: TextView
     private var verified = false
     private var photoB64 = ""
+    private var abi64 = true
 
     private val http by lazy {
         OkHttpClient.Builder()
@@ -127,7 +129,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "高校认证 v1.13b"
+        title = "高校认证 v1.14"
 
         // v1.10 关键修复：photoB64 只在当场选照片时赋值，进程重启后是空串
         // → /prepare 发空 photo → 服务器 bad_photo。prefs 里存过，必须恢复。
@@ -220,6 +222,22 @@ class MainActivity : Activity() {
         aCard.addView(rowBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
         boxFields.addView(aCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
 
+        // ===== v1.14：X5 内核下载（授权后才可见可用） =====
+        val tbsCard = card()
+        tbsCard.addView(label("X5 内核下载（写入 QQ 内核目录）"))
+        abi64 = android.os.Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()
+        val abiName = if (abi64)
+            android.os.Build.SUPPORTED_64_BIT_ABIS.firstOrNull() ?: "arm64-v8a"
+        else
+            android.os.Build.SUPPORTED_32_BIT_ABIS.firstOrNull() ?: "armeabi-v7a"
+        tbsCard.addView(TextView(this).apply {
+            text = "检测到 ${if (abi64) "64 位" else "32 位"} 内核（$abiName）"
+            textSize = 12f; setTextColor(C_GOLD); typeface = Typeface.MONOSPACE
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+        btnTbs = button("下载 X5 内核到 QQ", big = true, primary = true)
+        tbsCard.addView(btnTbs, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 14 })
+        boxFields.addView(tbsCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
+
         // ===== 状态 + 日志 =====
         tvStatus = TextView(this).apply {
             textSize = 14f; setTextColor(C_GOLD); text = TunnelService.status
@@ -281,6 +299,24 @@ class MainActivity : Activity() {
             TunnelService.appendLog("已停止")
         }
 
+        // v1.14：X5 内核下载按钮（仅授权后可见，双保险再校验一次）
+        btnTbs.setOnClickListener {
+            if (!verified) { toast("请先验证授权码"); return@setOnClickListener }
+            val code = edCode.text.toString().trim()
+            if (code.isEmpty()) { toast("缺少授权码"); return@setOnClickListener }
+            if (!hasAllFilesAccess()) { requestAllFilesAccess(); return@setOnClickListener }
+            btnTbs.isEnabled = false
+            btnTbs.text = "下载中…"
+            Thread {
+                val ok = doDownloadTbs(code, abi64)
+                runOnUiThread {
+                    btnTbs.isEnabled = true
+                    btnTbs.text = "下载 X5 内核到 QQ"
+                    toast(if (ok) "内核已写入 QQ 目录，重启 QQ 后生效" else "下载失败，详情看日志")
+                }
+            }.start()
+        }
+
         TunnelService.onLog = { runOnUiThread { tvLog.append(it + "\n") } }
         TunnelService.onStatus = { runOnUiThread { tvStatus.text = it } }
     }
@@ -309,6 +345,100 @@ class MainActivity : Activity() {
         val pi = packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNATURES)
         val md = MessageDigest.getInstance("SHA-256")
         return md.digest(pi.signatures[0].toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    // ===== v1.14：X5 内核下载 =====
+    // Android 11+ 要写其他应用的 Android/data 必须「所有文件访问」（Android 12+ 才真正放行该目录）
+    private fun hasAllFilesAccess(): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= 30) {
+            android.os.Environment.isExternalStorageManager()
+        } else {
+            checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun requestAllFilesAccess() {
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            try {
+                startActivityForResult(
+                    Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        Uri.parse("package:$packageName")), 7002)
+            } catch (e: Exception) {
+                startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION), 7002)
+            }
+            toast("请授予『所有文件访问』权限后，回来再点一次下载")
+        } else {
+            requestPermissions(arrayOf(
+                android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                android.Manifest.permission.READ_EXTERNAL_STORAGE), 7003)
+        }
+    }
+
+    private fun doDownloadTbs(code: String, abi64: Boolean): Boolean {
+        val abi = if (abi64) "64" else "32"
+        val fname = if (abi64)
+            "tbs_core_047941_20260827175914_nolog_fs_obfs_arm64-v8a_release.tbs"
+        else
+            "tbs_core_046514_20230612114949_nolog_fs_obfs_armeabi_release.tbs"
+        return try {
+            // /storage/emulated/0/Android/data/com.tencent.mobileqq/files/tbs（无目录自动创建）
+            val dir = java.io.File(android.os.Environment.getExternalStorageDirectory(),
+                "Android/data/com.tencent.mobileqq/files/tbs")
+            if (!dir.isDirectory && !dir.mkdirs()) {
+                TunnelService.appendLog("TBS: 目录创建失败（缺所有文件访问权限？）")
+                return false
+            }
+            val out = java.io.File(dir, fname)
+            TunnelService.appendLog("TBS: 目标 ${out.absolutePath}")
+            val req = Request.Builder()
+                .url("https://" + TunnelService.SERVER_HOST + ":" + TunnelService.SERVER_PORT +
+                    "/tbs?code=" + java.net.URLEncoder.encode(code, "UTF-8") + "&abi=$abi")
+                .build()
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    TunnelService.appendLog("TBS: 服务器返回 ${resp.code}")
+                    return false
+                }
+                val total = resp.body?.contentLength() ?: -1L
+                if (total > 0 && out.isFile && out.length() == total) {
+                    TunnelService.appendLog("TBS: 文件已存在且大小一致，跳过")
+                    return true
+                }
+                val tmp = java.io.File(dir, "$fname.part")
+                var done = 0L
+                var lastLog = -10
+                resp.body?.byteStream()?.use { ins ->
+                    tmp.outputStream().use { fos ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = ins.read(buf)
+                            if (n < 0) break
+                            fos.write(buf, 0, n)
+                            done += n
+                            val pct = if (total > 0) (done * 100 / total).toInt() else -1
+                            if (pct >= 0 && pct - lastLog >= 10) {
+                                lastLog = pct
+                                TunnelService.appendLog("TBS: $pct% (${String.format("%.1f", done / 1048576.0)}MB)")
+                            }
+                        }
+                    }
+                }
+                if (total > 0 && done != total) {
+                    TunnelService.appendLog("TBS: 下载不完整 $done/$total")
+                    tmp.delete()
+                    return false
+                }
+                if (!tmp.renameTo(out)) {
+                    out.delete(); tmp.copyTo(out, overwrite = true); tmp.delete()
+                }
+                TunnelService.appendLog("TBS: 完成 ${String.format("%.1f", out.length() / 1048576.0)}MB → ${out.absolutePath}")
+                true
+            }
+        } catch (e: Exception) {
+            TunnelService.appendLog("TBS: 失败 ${e.message}")
+            false
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -340,6 +470,22 @@ class MainActivity : Activity() {
                     .putString("photo", photoB64).putString("pname", tvPhotoName.text.toString()).apply()
             } catch (e: Exception) {
                 toast("读取失败：${e.message}")
+            }
+        }
+        // v1.14：从「所有文件访问」设置页返回
+        if (requestCode == 7002) {
+            if (hasAllFilesAccess()) toast("权限已授予，可以下载了")
+            else toast("未授予『所有文件访问』，无法写入 QQ 目录")
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 7003) {
+            if (grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                toast("权限已授予，可以下载了")
+            } else {
+                toast("未授予存储权限，无法写入 QQ 目录")
             }
         }
     }
