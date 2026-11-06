@@ -54,6 +54,8 @@ class TunnelService : Service() {
         @Volatile var logBuf = StringBuilder()
         @Volatile var onLog: ((String) -> Unit)? = null
         @Volatile var onStatus: ((String) -> Unit)? = null
+        // v1.15：MainActivity 的 TBS 下载要用 adb shell 写 QQ 的 Android/data
+        @Volatile var sharedAdb: AdbShell? = null
 
         fun appendLog(s: String) {
             logBuf.append(s).append('\n')
@@ -98,6 +100,7 @@ class TunnelService : Service() {
     override fun onDestroy() {
         tunnel?.stop()
         scope.cancel()
+        sharedAdb = null
         adb?.killServer()
         super.onDestroy()
     }
@@ -117,6 +120,7 @@ class TunnelService : Service() {
         setStatus("● 初始化 adb…")
         val shell = AdbShell(this@TunnelService)
         adb = shell
+        sharedAdb = shell
         shell.startServer()
 
         var pPort = pairPort
