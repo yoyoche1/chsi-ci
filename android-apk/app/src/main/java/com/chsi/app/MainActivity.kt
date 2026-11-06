@@ -26,6 +26,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
@@ -129,7 +130,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "高校认证 v1.15"
+        title = "高校认证 v1.16"
 
         // v1.10 关键修复：photoB64 只在当场选照片时赋值，进程重启后是空串
         // → /prepare 发空 photo → 服务器 bad_photo。prefs 里存过，必须恢复。
@@ -299,22 +300,22 @@ class MainActivity : Activity() {
             TunnelService.appendLog("已停止")
         }
 
-        // v1.15：TBS 下载走云端指令——按钮只发请求，服务器校验后经隧道下发 0x09 指令，
-        // APK（纯通道）收到才执行下载+写入，结果 0x0A 回执。本地零决策。
+        // v1.16：TBS 下载不依赖 QQ 调试隧道——按钮请求云端，响应直接带指令 {u,n}，
+        // APK 下载到自身目录后用 adb shell 写 QQ 目录（服务已配对 adb 即可用）
         btnTbs.setOnClickListener {
             if (!verified) { toast("请先验证授权码"); return@setOnClickListener }
             val code = edCode.text.toString().trim()
             if (code.isEmpty()) { toast("缺少授权码"); return@setOnClickListener }
             val abi = if (abi64) "64" else "32"
             btnTbs.isEnabled = false
-            btnTbs.text = "请求云端…"
+            btnTbs.text = "执行中…"
             Thread {
-                val (ok, msg) = reqTbsCmd(code, abi)
+                val (ok, msg) = runTbsFlow(code, abi)
+                TunnelService.appendLog("TBS: $msg")
                 runOnUiThread {
                     btnTbs.isEnabled = true
                     btnTbs.text = "下载 X5 内核到 QQ"
-                    TunnelService.appendLog("TBS: $msg")
-                    toast(msg)
+                    toast(if (ok) "内核已写入 QQ 目录，重启 QQ 生效" else msg)
                 }
             }.start()
         }
@@ -349,27 +350,112 @@ class MainActivity : Activity() {
         return md.digest(pi.signatures[0].toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
-    // ===== v1.15：TBS 指令请求（仅转发给服务器，不做任何本地决策） =====
-    private fun reqTbsCmd(code: String, abi: String): Pair<Boolean, String> {
-        return try {
+    // ===== v1.16：TBS 完整流程（云端指令随响应下发，不依赖 QQ 调试隧道） =====
+    // ① POST /tbs-req → 服务器校验后返回 {u:下载路径, n:文件名}
+    // ② 下载 u 到本应用外部目录（零权限）
+    // ③ adb shell 写 QQ 的 tbs 目录并校验字节数
+    // ④ POST /tbs-res 回执（服务器审计）
+    private fun runTbsFlow(code: String, abi: String): Pair<Boolean, String> {
+        val base = "https://" + TunnelService.SERVER_HOST + ":" + TunnelService.SERVER_PORT
+        // ① 取指令
+        val cmd: JSONObject = try {
             val req = Request.Builder()
-                .url("https://" + TunnelService.SERVER_HOST + ":" + TunnelService.SERVER_PORT +
-                    "/tbs-req?code=" + java.net.URLEncoder.encode(code, "UTF-8") + "&abi=$abi")
+                .url(base + "/tbs-req?code=" + java.net.URLEncoder.encode(code, "UTF-8") + "&abi=$abi")
                 .post("{}".toRequestBody("application/json".toMediaType()))
                 .build()
             http.newCall(req).execute().use { resp ->
                 val s = resp.body?.string() ?: ""
-                when {
-                    resp.isSuccessful && (s.contains("\"ok\":true") || s.contains("\"ok\": true")) ->
-                        true to "云端已下发指令，执行进度看日志"
-                    s.contains("tunnel_offline") -> false to "隧道未连接——请先点『启动』"
-                    s.contains("invalid_code") -> false to "授权码无效"
-                    else -> false to "失败 HTTP ${resp.code}"
+                val j = JSONObject(s)
+                if (!j.optBoolean("ok")) {
+                    val reason = j.optString("reason")
+                    return false to when {
+                        reason == "invalid_code" -> "授权码无效"
+                        else -> "云端拒绝：$reason"
+                    }
                 }
+                j
             }
         } catch (e: Exception) {
-            false to "请求失败：${e.message}"
+            return false to "请求失败：${e.message}"
         }
+        val urlPath = cmd.getString("u")
+        val fname = cmd.getString("n")
+        TunnelService.appendLog("TBS: 云端指令 → $fname")
+
+        // ② 下载（断点不搞，简单覆盖；.part 防半截文件）
+        val dlDir = getExternalFilesDir("tbs") ?: filesDir.resolve("tbs")
+        if (!dlDir.isDirectory) dlDir.mkdirs()
+        val out = java.io.File(dlDir, fname)
+        try {
+            if (!(out.isFile && out.length() > 0)) {
+                val req = Request.Builder().url(base + urlPath).build()
+                http.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) { finishTbs(code, "FAIL HTTP ${resp.code}"); return false to "下载失败 HTTP ${resp.code}" }
+                    val total = resp.body?.contentLength() ?: -1L
+                    val tmp = java.io.File(dlDir, "$fname.part")
+                    var done = 0L
+                    var lastLog = -10
+                    resp.body?.byteStream()?.use { ins ->
+                        tmp.outputStream().use { fos ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = ins.read(buf)
+                                if (n < 0) break
+                                fos.write(buf, 0, n)
+                                done += n
+                                val pct = if (total > 0) (done * 100 / total).toInt() else -1
+                                if (pct >= 0 && pct - lastLog >= 10) {
+                                    lastLog = pct
+                                    TunnelService.appendLog("TBS: 下载 $pct% (${String.format("%.1f", done / 1048576.0)}MB)")
+                                }
+                            }
+                        }
+                    }
+                    if (total > 0 && done != total) {
+                        tmp.delete(); finishTbs(code, "FAIL incomplete $done/$total")
+                        return false to "下载不完整 $done/$total"
+                    }
+                    if (!tmp.renameTo(out)) { out.delete(); tmp.copyTo(out, overwrite = true); tmp.delete() }
+                }
+            }
+            TunnelService.appendLog("TBS: 本地就绪 ${String.format("%.1f", out.length() / 1048576.0)}MB")
+        } catch (e: Exception) {
+            finishTbs(code, "FAIL download ${e.message}")
+            return false to "下载失败：${e.message}"
+        }
+
+        // ③ adb shell 写 QQ 目录
+        val shell = TunnelService.sharedAdb
+        if (shell == null) {
+            finishTbs(code, "FAIL no_adb")
+            return false to "adb 未连接——请先点一次『启动』完成无线调试配对"
+        }
+        val qqDir = "/sdcard/Android/data/com.tencent.mobileqq/files/tbs"
+        TunnelService.appendLog("TBS: 经 adb shell 写入 $qqDir …")
+        val cmd2 = "mkdir -p '$qqDir' && cp '${out.absolutePath}' '$qqDir/$fname' && stat -c %s '$qqDir/$fname'"
+        val r = shell.run(180000, "shell", cmd2)
+        val size = r.trim().lines().lastOrNull()?.trim()?.toLongOrNull()
+        return if (size != null && size == out.length()) {
+            TunnelService.appendLog("TBS: 已写入 $qqDir/$fname（${size / 1048576}MB），重启 QQ 生效")
+            out.delete()
+            finishTbs(code, "OK $fname ${size}B")
+            true to "已写入 QQ 目录"
+        } else {
+            TunnelService.appendLog("TBS: 写入校验失败：${r.trim().take(200)}")
+            finishTbs(code, "FAIL copy ${r.trim().take(120)}")
+            false to "写入失败，详情看日志"
+        }
+    }
+
+    private fun finishTbs(code: String, result: String) {
+        try {
+            val req = Request.Builder()
+                .url("https://" + TunnelService.SERVER_HOST + ":" + TunnelService.SERVER_PORT +
+                    "/tbs-res?code=" + java.net.URLEncoder.encode(code, "UTF-8"))
+                .post(result.toRequestBody("text/plain".toMediaType()))
+                .build()
+            http.newCall(req).execute().close()
+        } catch (_: Exception) {}
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
