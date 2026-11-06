@@ -320,22 +320,35 @@ class TunnelService : Service() {
         return sb.toString()
     }
 
-    // v1.12：HTTP/1.0——devtools 服务端回完就断开，避免 1.1 keep-alive 读到超时误报「请求失败」
+    // v1.13b：与服务器 tunnelHttpGet 同款请求（HTTP/1.1 + Connection: close），
+    // 按 Content-Length 截取；超时也输出已收到内容——能看到内核的真实回话
     private fun httpGetLocal(port: Int, path: String): String? = try {
         val s = java.net.Socket()
         s.connect(java.net.InetSocketAddress("127.0.0.1", port), 2500)
-        s.soTimeout = 2500
+        s.soTimeout = 1500
         s.getOutputStream().apply {
-            write(("GET $path HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").toByteArray())
+            write(("GET $path HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").toByteArray())
             flush()
         }
         val buf = ByteArray(131072)
         var total = 0
         var n: Int
         val inp = s.getInputStream()
-        while (inp.read(buf, total, buf.size - total).also { n = it } > 0 && total < buf.size) { total += n }
+        try {
+            while (total < buf.size) {
+                n = inp.read(buf, total, buf.size - total)
+                if (n <= 0) break
+                total += n
+                val headEnd = String(buf, 0, total).indexOf("\r\n\r\n")
+                if (headEnd >= 0) {
+                    val head = String(buf, 0, headEnd)
+                    val m = Regex("(?i)content-length:\\s*(\\d+)").find(head)
+                    if (m != null && total >= headEnd + 4 + m.groupValues[1].toInt()) break
+                }
+            }
+        } catch (e: Exception) { /* 超时也用已收到的数据 */ }
         s.close()
-        String(buf, 0, total).substringAfter("\r\n\r\n", "")
+        if (total == 0) "EMPTY(0B)" else String(buf, 0, total).substringAfter("\r\n\r\n", "")
     } catch (e: Exception) { "ERR:" + (e.message ?: e.javaClass.simpleName) }
 
     // ===== v4.9.13：无线调试自动检测 =====

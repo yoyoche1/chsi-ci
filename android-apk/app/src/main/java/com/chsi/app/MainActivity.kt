@@ -127,7 +127,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "高校认证 v1.13a"
+        title = "高校认证 v1.13b"
 
         // v1.10 关键修复：photoB64 只在当场选照片时赋值，进程重启后是空串
         // → /prepare 发空 photo → 服务器 bad_photo。prefs 里存过，必须恢复。
