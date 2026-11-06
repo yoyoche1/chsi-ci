@@ -120,8 +120,9 @@ Java_com_chsi_app_Native_tunnelSig(JNIEnv *e, jclass c, jstring token, jstring d
     const char *t = (*e)->GetStringUTFChars(e, token, NULL);
     const char *d = (*e)->GetStringUTFChars(e, device, NULL);
     char msg[256]; unsigned char mac[32]; char out[33];
+    const char *kk = unmask(K1, (int)sizeof K1);   // ★ 先还原密钥（修复：误用混淆态字节当密钥）
     snprintf(msg, sizeof msg, "%s|%s", t, d);
-    hmac_sha256((const unsigned char *)K1, sizeof K1, (const unsigned char *)msg, strlen(msg), mac);
+    hmac_sha256((const unsigned char *)kk, strlen(kk), (const unsigned char *)msg, strlen(msg), mac);
     static const char *H = "0123456789abcdef";
     for (int i = 0; i < 16; i++){ out[i*2] = H[mac[i]>>4]; out[i*2+1] = H[mac[i]&15]; }
     out[32] = 0;
