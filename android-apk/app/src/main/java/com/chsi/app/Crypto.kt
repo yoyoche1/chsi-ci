@@ -1,24 +1,14 @@
 package com.chsi.app
 
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 import java.security.MessageDigest
 
 object Crypto {
-    // 与服务器 / PC 端完全一致（TUNNEL_KEY 泄则隧道签名失守——v1 与 PC 同 key，后续可换）
-    private const val TUNNEL_KEY = "7f3a91c25be04d68a1c9f2e8b6d47053"
+    // v1.13（L5）：密钥移入 libchsi.so——jadx 只见 external 声明，密钥分段 XOR 藏于 native。
+    // APK 专用密钥，与 PC/iOS 的 TUNNEL_KEY 分离（服务端按 token 来源选择校验密钥）。
 
-    fun tunnelSig(token: String, device: String): String {
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(TUNNEL_KEY.toByteArray(), "HmacSHA256"))
-        val out = mac.doFinal("$token|$device".toByteArray())
-        return out.joinToString("") { "%02x".format(it) }.take(32)
-    }
+    fun tunnelSig(token: String, device: String): String = Native.tunnelSig(token, device)
 
-    fun streamKey(token: String): ByteArray {
-        val md = MessageDigest.getInstance("SHA-256")
-        return md.digest("$TUNNEL_KEY|$token".toByteArray())
-    }
+    fun streamKey(token: String): ByteArray = Native.streamKey(token)
 
     // 与服务器 xorStream 同算法：SHA256(key || counter_BE) 分块 XOR
     fun xorStream(buf: ByteArray, key: ByteArray): ByteArray {

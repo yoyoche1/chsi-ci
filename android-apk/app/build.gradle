@@ -4,6 +4,7 @@ plugins {
 }
 
 android {
+    ndkVersion '26.1.10909125'
     namespace 'com.chsi.app'
     compileSdk 34
 
@@ -11,9 +12,10 @@ android {
         applicationId "com.chsi.app"
         minSdk 26
         targetSdk 34
-        versionCode 12
-        versionName "1.12"
+        versionCode 13
+        versionName "1.13"
         ndk { abiFilters 'arm64-v8a' }
+            externalNativeBuild { cmake { arguments '-DANDROID_STL=none' } }
         packagingOptions {
             doNotStrip "**/libadb.so"
             jniLibs.useLegacyPackaging = true
@@ -46,6 +48,14 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
+
+    // v1.13：JNI（libchsi.so）——密钥派生/签名期望值/反调试 收进 native
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
 }
 
 dependencies {
@@ -54,3 +64,4 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
+
