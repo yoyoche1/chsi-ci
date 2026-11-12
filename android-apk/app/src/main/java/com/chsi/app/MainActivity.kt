@@ -130,7 +130,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "高校认证 v1.17"
+        title = "高校认证 v1.16"
 
         // v1.10 关键修复：photoB64 只在当场选照片时赋值，进程重启后是空串
         // → /prepare 发空 photo → 服务器 bad_photo。prefs 里存过，必须恢复。
@@ -218,9 +218,8 @@ class MainActivity : Activity() {
         aCard.addView(edConnectPort, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
         val rowBtn = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         btnStart = button("启 动", big = true, primary = true)
-        val btnAuto = button("全自动", big = true)
         val btnStop = button("停 止", big = true)
-        rowBtn.addView(btnStart); rowBtn.addView(btnAuto); rowBtn.addView(btnStop)
+        rowBtn.addView(btnStart); rowBtn.addView(btnStop)
         aCard.addView(rowBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
         boxFields.addView(aCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
 
@@ -294,22 +293,6 @@ class MainActivity : Activity() {
                 putExtra(TunnelService.EXTRA_PAIR_CODE, edPairCode.text.toString().trim())
                 putExtra(TunnelService.EXTRA_CONNECT_PORT, edConnectPort.text.toString().toIntOrNull() ?: 0)
             }
-            if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
-        }
-        // v1.17：全自动——adb 遥控「重启 QQ → 武装调试开关 → 打开学信网 → 扫描注入」一条龙
-        btnAuto.setOnClickListener {
-            savePrefs()
-            val i = Intent(this, TunnelService::class.java).apply {
-                putExtra(TunnelService.EXTRA_CODE, edCode.text.toString().trim())
-                putExtra(TunnelService.EXTRA_NAME, edName.text.toString().trim())
-                putExtra(TunnelService.EXTRA_GENDER, if (rbFemale.isChecked) "女" else "男")
-                putExtra(TunnelService.EXTRA_PHOTO, photoB64)
-                putExtra(TunnelService.EXTRA_PAIR_PORT, edPairPort.text.toString().toIntOrNull() ?: 0)
-                putExtra(TunnelService.EXTRA_PAIR_CODE, edPairCode.text.toString().trim())
-                putExtra(TunnelService.EXTRA_CONNECT_PORT, edConnectPort.text.toString().toIntOrNull() ?: 0)
-                putExtra(TunnelService.EXTRA_AUTO, true)
-            }
-            TunnelService.appendLog("全自动模式：将遥控重启 QQ 并自动武装调试开关（QQ 会被强制关闭两次）")
             if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
         }
         btnStop.setOnClickListener {
