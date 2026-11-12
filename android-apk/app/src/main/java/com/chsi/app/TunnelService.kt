@@ -42,6 +42,7 @@ class TunnelService : Service() {
         const val EXTRA_PAIR_PORT = "pair_port"
         const val EXTRA_PAIR_CODE = "pair_code"
         const val EXTRA_CONNECT_PORT = "connect_port"
+        const val EXTRA_AUTO = "auto"   // v1.17：全自动模式（adb 遥控 QQ：重启+武装调试开关+打开学信网）
 
         const val SERVER_HOST = "chsi.889678.xyz"
         // v4.9.13g：雨云VPS架构——自签证书 + SPKI pin（cf/雨云只见密文字节流）
@@ -89,9 +90,10 @@ class TunnelService : Service() {
         val pairPort = intent?.getIntExtra(EXTRA_PAIR_PORT, 0) ?: 0
         val pairCode = intent?.getStringExtra(EXTRA_PAIR_CODE) ?: ""
         val connectPort = intent?.getIntExtra(EXTRA_CONNECT_PORT, 0) ?: 0
+        val auto = intent?.getBooleanExtra(EXTRA_AUTO, false) ?: false
 
         scope.launch {
-            runCatching { runFlow(code, name, gender, photo, pairPort, pairCode, connectPort) }
+            runCatching { runFlow(code, name, gender, photo, pairPort, pairCode, connectPort, auto) }
                 .onFailure { appendLog("错误：" + (it.message ?: it.javaClass.simpleName)); setStatus("● 失败") }
         }
         return START_STICKY
@@ -103,6 +105,41 @@ class TunnelService : Service() {
         sharedAdb = null
         adb?.killServer()
         super.onDestroy()
+    }
+
+    // v1.17：全自动模式核心——adb 遥控 QQ 完成「重启 → 开调试 → 打开学信网」
+    // 全部经无线调试 shell 执行，无需 root；每步落日志便于定位失败环节
+    private fun autoArmQQ(shell: AdbShell) {
+        setStatus("● 全自动：重启 QQ…")
+        appendLog("全自动[1/6]：强制停止 QQ")
+        shell.run(10000, "shell", "am force-stop com.tencent.mobileqq")
+        Thread.sleep(2000)
+
+        appendLog("全自动[2/6]：启动 QQ")
+        shell.run(15000, "shell", "monkey -p com.tencent.mobileqq -c android.intent.category.LAUNCHER 1")
+        Thread.sleep(6000)
+
+        setStatus("● 全自动：武装调试开关…")
+        appendLog("全自动[3/6]：QQ 内打开调试开关页")
+        val arm = shell.run(15000, "shell",
+            "am start -a android.intent.action.VIEW -d 'http://debugx5.qq.com/?inspector=true' com.tencent.mobileqq")
+        appendLog("全自动：开关页 → " + (arm.trim().lineSequence().firstOrNull()?.take(120) ?: ""))
+        Thread.sleep(6000)
+
+        appendLog("全自动[4/6]：再次重启 QQ 使开关生效")
+        shell.run(10000, "shell", "am force-stop com.tencent.mobileqq")
+        Thread.sleep(2000)
+        shell.run(15000, "shell", "monkey -p com.tencent.mobileqq -c android.intent.category.LAUNCHER 1")
+        Thread.sleep(6000)
+
+        setStatus("● 全自动：打开学信网…")
+        appendLog("全自动[5/6]：QQ 内打开学信网")
+        val open = shell.run(15000, "shell",
+            "am start -a android.intent.action.VIEW -d 'https://www.chsi.com.cn/' com.tencent.mobileqq")
+        appendLog("全自动：学信网 → " + (open.trim().lineSequence().firstOrNull()?.take(120) ?: ""))
+        Thread.sleep(5000)
+
+        appendLog("全自动[6/6]：开始扫描调试口（如未登录学信网请登录并进入认证页，注入会自动完成）")
     }
 
     // ===== v1.15：TBS 云端指令执行（纯通道——指令由服务端 0x09 下发，结果 0x0A 回执） =====
@@ -187,7 +224,7 @@ class TunnelService : Service() {
     }
 
     private suspend fun runFlow(code: String, name: String, gender: String, photo: String,
-                                pairPort: Int, pairCode: String, connectPort: Int) {
+                                pairPort: Int, pairCode: String, connectPort: Int, auto: Boolean = false) {
         // v1.6：服务器固定默认（界面配置入口已按需求移除，不再读 prefs）
         val base = "https://$SERVER_HOST:$SERVER_PORT"
         val wsUrl = "wss://$SERVER_HOST:$SERVER_PORT/tunnel"
@@ -245,6 +282,9 @@ class TunnelService : Service() {
             .map { it.trim().split(Regex("\\s+")) }
             .firstOrNull { it.size >= 2 && it[1] == "device" }?.get(0)
         appendLog("adb 设备：${shell.serial}")
+
+        // v1.17：全自动模式——adb 遥控完成「重启 QQ → 武装调试开关 → 打开学信网」
+        if (auto) autoArmQQ(shell)
 
         setStatus("● 扫描调试口…")
         var socks = shell.findDevtoolsSockets()
