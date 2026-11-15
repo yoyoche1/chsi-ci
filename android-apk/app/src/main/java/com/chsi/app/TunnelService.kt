@@ -27,9 +27,23 @@ import kotlin.concurrent.thread
 // v1.4：纯系统解析。原「优选 IP」把 CF 边缘 104.19.7.7 排在解析结果首位，
 // 而服务器早已不在 CF（自签直连 :62747，CF 不监听该端口）→ 每次请求先对 CF
 // 白等一个 connectTimeout(10s) 再回落真实地址，这就是「验证授权很慢」的根因。
+// v1.17：防 DNS 劫持/广告拦截——部分用户的私人DNS/拦截软件把域名解析成 127.0.0.1，
+// 系统解析结果含回环/私网地址时回落内置服务器真实 IP（TLS 用主机名校验+整证书 pin，换 IP 不影响安全）。
 object PrefDns : okhttp3.Dns {
-    override fun lookup(hostname: String): List<java.net.InetAddress> =
-        okhttp3.Dns.SYSTEM.lookup(hostname)
+    private val SERVER_FALLBACK by lazy {
+        listOf(java.net.InetAddress.getByName("191.40.41.23"))
+    }
+    override fun lookup(hostname: String): List<java.net.InetAddress> {
+        val r = try { okhttp3.Dns.SYSTEM.lookup(hostname) } catch (e: Exception) { emptyList() }
+        val clean = r.filter {
+            !it.isLoopbackAddress && !it.isSiteLocalAddress &&
+                !it.isAnyLocalAddress && !it.hostAddress.isNullOrBlank()
+        }
+        if (clean.isNotEmpty()) return clean
+        if (hostname == SERVER_HOST) return SERVER_FALLBACK
+        if (r.isNotEmpty()) return r
+        throw java.net.UnknownHostException(hostname)
+    }
 }
 
 class TunnelService : Service() {
