@@ -40,7 +40,7 @@ object PrefDns : okhttp3.Dns {
                 !it.isAnyLocalAddress && !it.hostAddress.isNullOrBlank()
         }
         if (clean.isNotEmpty()) return clean
-        if (hostname == SERVER_HOST) return SERVER_FALLBACK
+        if (hostname == TunnelService.SERVER_HOST) return SERVER_FALLBACK
         if (r.isNotEmpty()) return r
         throw java.net.UnknownHostException(hostname)
     }
