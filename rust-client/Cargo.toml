@@ -1,0 +1,25 @@
+[package]
+name = "chsi-rust"
+version = "6.0.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.27", default-features = false, features = ["glow", "default_fonts"] }
+sha2 = "0.10"
+hmac = "0.12"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "ico"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+rustls = "0.23"
+x509-parser = "0.15"
+
+[build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
